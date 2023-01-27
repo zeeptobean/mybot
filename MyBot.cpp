@@ -42,9 +42,12 @@ int main()
 	newmsg.add_file("file2.txt", str);
 
     /* Handle slash command */
-    bot.on_slashcommand([&newmsg](const dpp::slashcommand_t& event) {
+    bot.on_slashcommand([&bot, &newmsg](const dpp::slashcommand_t& event) {
          if (event.command.get_command_name() == "ping") {
-            event.reply(newmsg);
+            // event.reply("ready!");
+			event.reply(newmsg);
+			//somehow message_create work with everything over 8 MiB
+			bot.message_create(newmsg);
         }
     });
 
