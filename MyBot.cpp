@@ -41,13 +41,22 @@ int main()
 	newmsg.add_file("file1.txt", str);
 	newmsg.add_file("file2.txt", str);
 
+
     /* Handle slash command */
     bot.on_slashcommand([&bot, &newmsg](const dpp::slashcommand_t& event) {
          if (event.command.get_command_name() == "ping") {
             // event.reply("ready!");
-			event.reply(newmsg);
+			event.reply(newmsg, [&bot](const dpp::confirmation_callback_t& callback) {
+				dpp::message failmsg(&bot);
+				failmsg.set_guild_id(664744934003310592);
+				failmsg.set_channel_id(1056052934921699388);
+				failmsg.set_content("failed!");
+
+				bot.message_create(failmsg);
+				return dpp::utility::log_error()(callback);
+			});
 			//somehow message_create work with everything over 8 MiB
-			bot.message_create(newmsg);
+			// bot.message_create(newmsg);
         }
     });
 
