@@ -1,7 +1,6 @@
 #define _CRT_SECURE_NO_WARNINGS     //fuck msvc
 #define NOMINMAX //get rid of windef.h bad max/min impl
 #define UNICODE
-//#define _CONSOLE	//not ready for winmain
 
 //Use c++ i/o for all
 
@@ -235,7 +234,7 @@ inline void preinit() {
 	}
 
 	// logging
-	logger("Hello world! Current time is %s\n", __timestr);
+	logger("\nHello world! Current time is %s\n", __timestr);
 	#if defined(__GNUC__)
         logger("Built with GCC %d.%d.%d ", __GNUC__, __GNUC_MINOR__, __GNUC_PATCHLEVEL__);
         #if defined(__MINGW64__)
@@ -256,9 +255,9 @@ void logrun()
 	std::unique_lock<std::mutex> locker(bot_connected_lock);
 	while (is_bot_connected == 0) bot_connected_condvar.wait(locker);
 	if (is_bot_connected != -1) {
-		logger("[INFO] Bot successfully initialized. Logging...");
+		logger("[INFO] Bot successfully initialized. Logging...\n");
 	} else {
-		logger("[CRITICAL!] Bot failed to initialized. Terminating...");
+		logger("[CRITICAL!] Bot failed to initialized. Terminating...\n");
 		exit(EXIT_FAILURE);
 	}
 
@@ -340,14 +339,13 @@ void botrun()
 }
 
 //now switch to windows subsystem, no longer console
-// int wWinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, PWSTR pCmdLine, int nCmdShow) {
-int main() {
+int wWinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, PWSTR pCmdLine, int nCmdShow) {
 	// int argc;
 	// WCHAR** argv = CommandLineToArgvW(pCmdLine, &argc);
 
 	preinit();
 
-	ShowWindow(FindWindowW(L"ConsoleWindowClass", NULL), 0); // visible window
+	// ShowWindow(FindWindowW(L"ConsoleWindowClass", NULL), 0); // visible window
 
 	//initial
 	file_list.push_back(std::string());
