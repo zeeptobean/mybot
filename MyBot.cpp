@@ -1,7 +1,7 @@
 #define _CRT_SECURE_NO_WARNINGS     //fuck msvc
 
 #pragma warning(push, 0)
-#include "MyBot.h"
+// #include "MyBot.h"
 #include <dpp/dpp.h>
 #include <thread>
 #pragma warning(pop)
@@ -14,62 +14,49 @@
  * scopes 'bot' and 'applications.commands', e.g.
  * https://discord.com/oauth2/authorize?client_id=940762342495518720&scope=bot+applications.commands&permissions=139586816064
  */
-const std::string    BOT_TOKEN    = "Nzk1MjgzNjM2MDg1MzI1ODI1.GJQ65H.orWw99qm-DPXVNYJxb767PoppSohLsphOJKcJw";
+const std::string    BOT_TOKEN    = "Nzk1MjgzNjM2MDg1MzI1ODI1.Gi9kUj.ZBA78aLZeE_ZNnQuQM3LYIXTIfq11eYNMcUKbk";
 
-int main()
+int WINAPI wWinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, PWSTR pCmdLine, int nCmdShow) 
 {
+
+    int argc;
+    LPWSTR *argv = CommandLineToArgvW(GetCommandLineW(), &argc);
+
+    if(argc < 2) {
+        return -1;
+    }
+
+    int clientid = 0;
+
+    swscanf(argv[1], L"%d", &clientid);
+
     /* Create bot cluster */
-    dpp::cluster bot(BOT_TOKEN);
+    dpp::cluster bot(BOT_TOKEN, dpp::i_default_intents,
+            0,          //shards
+            clientid, 5,       //cluster id/ max cluster
+            true,       //compressed?
+            { dpp::cp_aggressive, dpp::cp_aggressive, dpp::cp_aggressive },
+            10, 0);
 
     /* Output simple log messages to stdout */
     bot.on_log(dpp::utility::cout_logger());
 
-	dpp::message newmsg(&bot);
-    newmsg.set_guild_id(664744934003310592);
-    newmsg.set_channel_id(1056052934921699388);
+    unsigned int procid = GetProcessId(GetCurrentProcess());
+    
+    std::string str = "Process " + std::to_string(procid) + " answered!"; 
 
-	std::ifstream infile("dump-msvc.txt");
-	infile.seekg(0, infile.end);
-	int len = infile.tellg();
-	infile.seekg(0, infile.beg);
-	char *buf = new char[len+1];
-	infile.read(buf, len);
-	std::string str = std::string(buf);
-	infile.close();
-	delete[] buf; 
-
-	newmsg.add_file("file1.txt", str);
-	newmsg.add_file("file2.txt", str);
-
-
-    /* Handle slash command */
-    bot.on_slashcommand([&bot, &newmsg](const dpp::slashcommand_t& event) {
-         if (event.command.get_command_name() == "ping") {
-            // event.reply("ready!");
-			event.reply(newmsg, [&bot](const dpp::confirmation_callback_t& callback) {
-				dpp::message failmsg(&bot);
-				failmsg.set_guild_id(664744934003310592);
-				failmsg.set_channel_id(1056052934921699388);
-				failmsg.set_content("failed!");
-
-				bot.message_create(failmsg);
-				return dpp::utility::log_error()(callback);
-			});
-			//somehow message_create work with everything over 8 MiB
-			// bot.message_create(newmsg);
-        }
-    });
-
-    /* Register slash command here in on_ready */
-    bot.on_ready([&bot](const dpp::ready_t& event) {
-        /* Wrap command registration in run_once to make sure it doesnt run on every full reconnection */
-        if (dpp::run_once<struct register_bot_commands>()) {
-            bot.global_command_create(dpp::slashcommand("ping", "Ping pong!", bot.me.id));
-        }
-    });
+	dpp::message msg(&bot);
+    msg.set_guild_id(664744934003310592);
+    msg.set_channel_id(1056052934921699388);
+    msg.set_content(str);
 
     /* Start the bot */
-    bot.start(false);
+    bot.start(true);
+
+    while(true) {
+        std::this_thread::sleep_for(std::chrono::seconds(2));
+        bot.message_create(msg);
+    }
 
     return 0;
 }
