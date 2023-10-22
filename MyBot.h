@@ -50,7 +50,6 @@
 #include <Gdiplus.h>
 
 #pragma warning (pop)
-#undef DPP_EXPORT
 
 #ifdef EXTERNAL_BOT_TOKEN
 const std::string BOT_TOKEN = EXTERNAL_BOT_TOKEN;
@@ -121,8 +120,8 @@ const std::map<int, std::string> keyname{
 };
 
 #define __hrmn(h, m) (h*3600+m*60)
-const std::vector<time_t> SCHEDULE = {__hrmn(7, 40), __hrmn(8, 25), __hrmn(9, 21), __hrmn(10, 21), __hrmn(11, 05),
-                            __hrmn(14, 06), __hrmn(14, 50), __hrmn(16, 04), __hrmn(16, 50)};
+const std::vector<time_t> SCHEDULE = {__hrmn(7, 40), __hrmn(8, 30), __hrmn(9, 39), __hrmn(10, 30),
+                            __hrmn(13, 39), __hrmn(14, 26), __hrmn(15, 44), __hrmn(16, 29)};
 
 struct __tCOMMAND_LINE_OPTION {
 	std::string BOT_LOCATION[4] = {
