@@ -557,24 +557,33 @@ inline void preinit() {
 		strftime(__timestr, sizeof(__timestr), "%c", __timestruct);
 	}
 
-	//version string
+    //version string
 	char buffer[1001];
 	version_string.clear();
-	#if defined(__GNUC__)
+	#if defined(__clang__)
+		snprintf(buffer, 1001, "Built with clang %d.%d.%d ", __clang_major__, __clang_minor__, __clang_patchlevel__);
+        version_string += std::string(buffer);
+    #elif defined(__GNUC__)
         snprintf(buffer, 1001, "Built with GCC %d.%d.%d ", __GNUC__, __GNUC_MINOR__, __GNUC_PATCHLEVEL__);
 		version_string += std::string(buffer);
-        #if defined(__MINGW64__)
-            snprintf(buffer, 1001, "(MinGW-w64 %d.%d) ", __MINGW64_VERSION_MAJOR, __MINGW64_VERSION_MINOR);
-        #elif defined(__MINGW32__)
-            snprintf(buffer, 1001, "(MinGW %d.%d) ", __MINGW32_MAJOR_VERSION, __MINGW32_MINOR_VERSION);
-        #endif
     #elif defined(_MSC_VER)
-        snprintf(buffer, 1001, "Built with MSVC %d ", _MSC_VER);
+        snprintf(buffer, 1001, "Built with MSVC %d ", _MSC_FULL_VER);
+        version_string += std::string(buffer);
     #else
         snprintf(buffer, 1001, "Built with unknown compiler ");
+        version_string += std::string(buffer);
     #endif
-	version_string += std::string(buffer);
-	snprintf(buffer, 1001, "on %s at %s. %d-bit build\nDPP version: %s\n", __DATE__, __TIME__, (int) (sizeof(void*) << 3), dpp::utility::version().c_str());
+
+    //mingw if present
+    #if defined(__MINGW64__)
+        snprintf(buffer, 1001, "(MinGW-w64 %d.%d) ", __MINGW64_VERSION_MAJOR, __MINGW64_VERSION_MINOR);
+        version_string += std::string(buffer);
+    #elif defined(__MINGW32__)
+        snprintf(buffer, 1001, "(MinGW %d.%d) ", __MINGW32_MAJOR_VERSION, __MINGW32_MINOR_VERSION);
+        version_string += std::string(buffer);
+    #endif
+
+	snprintf(buffer, 1001, "on %s at %s. %d-bit build\nDPP version: %s\n", __DATE__, __TIME__, (int) (sizeof(void*) << 3), "null");
 	version_string += std::string(buffer);
 	// logging
 	logger("\nHello world! Current time is %s\n%s", __timestr, version_string.c_str());

