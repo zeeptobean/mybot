@@ -762,6 +762,7 @@ const std::map<std::string, std::function<void(const std::vector<std::string>&)>
 	}}
 };
 
+//Command-line interface is untested...
 int cmdline_parse(int argc, WCHAR** argv) {	
 	for(int i=1; i < argc; i++) {
 		int wlen = wcslen(argv[i]);

